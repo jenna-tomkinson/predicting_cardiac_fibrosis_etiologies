@@ -18,6 +18,9 @@ logs/
 # Ignore profiles in data folder (too many files)
 3.preprocessing_profiles/data/
 
+# Ignore in-progress/prototyping work
+in_progress/
+
 ###################################
 # Python .gitignore defaults
 ###################################

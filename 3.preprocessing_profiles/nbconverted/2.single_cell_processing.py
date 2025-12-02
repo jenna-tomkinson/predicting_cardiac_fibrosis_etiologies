@@ -170,6 +170,16 @@ for plate, info in plate_info_dictionary.items():
         output_file=output_feature_select_file,
         output_type="parquet",
     )
+
+    # Load back in the feature selected data to drop specific features that leaked in (Costes and Location features)
+    feature_selected_df = pd.read_parquet(output_feature_select_file)
+    cols_to_drop = [
+        col
+        for col in feature_selected_df.columns
+        if ("Costes" in col or "Location" in col) and not col.startswith("Metadata_")
+    ]
+    feature_selected_df.drop(columns=cols_to_drop, inplace=True)
+    feature_selected_df.to_parquet(output_feature_select_file, index=False)
     print(
         f"Annotation, normalization, and feature selection have been performed for {plate}"
     )
@@ -180,6 +190,22 @@ for plate, info in plate_info_dictionary.items():
 
 # Check output file
 test_df = pd.read_parquet(output_feature_select_file)
+
+# Test if Costes and Location features were dropped (not including columns that start with Metadata_)
+for col in test_df.columns:
+    # Skip metadata columns
+    if col.startswith("Metadata_"):
+        continue
+    if "Costes" in col or "Location" in col:
+        raise ValueError(
+            f"Feature selection failed to drop {col} from the feature selected data."
+        )
+
+# Print the number of features (do not have Metadata_* prefix)
+non_metadata_features = [
+    col for col in test_df.columns if not col.startswith("Metadata_")
+]
+print(f"Number of features: {len(non_metadata_features)}")
 
 print(test_df.shape)
 test_df.head(2)

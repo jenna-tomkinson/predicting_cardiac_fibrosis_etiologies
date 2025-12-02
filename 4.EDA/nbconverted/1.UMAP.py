@@ -105,6 +105,7 @@ umap_fit = umap.UMAP(
 embeddings = pd.DataFrame(
     umap_fit.fit_transform(no_qc_df.loc[:, cp_features]),
     columns=[f"UMAP{x}" for x in range(0, umap_n_components)],
+    index=no_qc_df.index,  # ✅ ensures alignment
 )
 print(f"{embeddings.shape} UMAP embeddings generated")
 
@@ -116,6 +117,14 @@ cp_umap_with_metadata_no_qc_df = pd.concat(
 
 # In[6]:
 
+
+# Create a facet label that includes "Heart #"
+cp_umap_with_metadata_no_qc_df["Metadata_heart_number"] = (
+    cp_umap_with_metadata_no_qc_df["Metadata_heart_number"].astype(str)
+)
+cp_umap_with_metadata_no_qc_df["Metadata_heart_number_label"] = (
+    "Heart #" + cp_umap_with_metadata_no_qc_df["Metadata_heart_number"]
+)
 
 # Reorder so the orange points (failed QC) are plotted on top of blue points (passed QC)
 cp_umap_with_metadata_no_qc_df = cp_umap_with_metadata_no_qc_df.sort_values(
@@ -139,7 +148,7 @@ p = (
     )
     + geom_point(alpha=0.1, size=2)
     + facet_wrap(
-        "Metadata_heart_number",
+        "Metadata_heart_number_label",
         ncol=2,
         scales="fixed",
     )
@@ -193,6 +202,7 @@ umap_fit = umap.UMAP(
 embeddings = pd.DataFrame(
     umap_fit.fit_transform(qc_df.loc[:, cp_features]),
     columns=[f"UMAP{x}" for x in range(0, umap_n_components)],
+    index=qc_df.index,  # ✅ ensures alignment
 )
 print(f"{embeddings.shape} UMAP embeddings generated")
 
@@ -210,6 +220,14 @@ height = 8
 width = 8
 set_option("figure_size", (width, height))
 
+# Add "Heart #" label for facets
+cp_umap_with_metadata_qc_df["Metadata_heart_number"] = cp_umap_with_metadata_qc_df[
+    "Metadata_heart_number"
+].astype(str)
+cp_umap_with_metadata_qc_df["Metadata_heart_number_label"] = (
+    "Heart #" + cp_umap_with_metadata_qc_df["Metadata_heart_number"]
+)
+
 # Plot UMAP of QC profiles colored by actin max intensity and faceted by heart number
 p = (
     ggplot(
@@ -221,7 +239,7 @@ p = (
     )
     + geom_point(alpha=0.3, size=2)
     + facet_wrap(
-        "Metadata_heart_number",
+        "Metadata_heart_number_label",
         ncol=2,
         scales="fixed",
     )
@@ -287,5 +305,89 @@ p.save(
     width=width,
     height=height,
 )
+p.show()
+
+
+# ## UMAP of only hearts 7 and 25 to compare (in relation to drug screening)
+
+# In[10]:
+
+
+# Copy Cells_Intensity_MaxIntensity_Actin and add Metadata_ prefix to use in UMAP plot later
+qc_df["Metadata_Cells_Intensity_MaxIntensity_Actin"] = qc_df[
+    "Cells_Intensity_MaxIntensity_Actin"
+]
+
+# Keep only hearts #7 and #25 for UMAP
+filtered_qc_df = qc_df[qc_df["Metadata_heart_number"].isin([7, 25])].copy()
+print(f"Filtered QC (hearts 7 and 25) shape: {filtered_qc_df.shape}")
+
+# Process cp_df to separate features and metadata
+cp_features = infer_cp_features(filtered_qc_df)
+meta_features = infer_cp_features(filtered_qc_df, metadata=True)
+
+# Initialize UMAP instance
+umap_fit = umap.UMAP(
+    random_state=umap_random_seed,
+    n_components=umap_n_components,
+    n_jobs=1,
+)
+
+# Fit UMAP and convert to pandas DataFrame
+embeddings = pd.DataFrame(
+    umap_fit.fit_transform(filtered_qc_df.loc[:, cp_features]),
+    columns=[f"UMAP{x}" for x in range(0, umap_n_components)],
+    index=filtered_qc_df.index,  # ✅ ensures alignment
+)
+print(f"{embeddings.shape} UMAP embeddings generated")
+
+# Combine with metadata
+cp_umap_with_metadata_qc_df = pd.concat(
+    [filtered_qc_df.loc[:, meta_features], embeddings], axis=1
+)
+
+
+# In[11]:
+
+
+print(filtered_qc_df.index.equals(embeddings.index))
+
+
+# In[12]:
+
+
+# Set the figure size
+height = 8
+width = 8
+set_option("figure_size", (width, height))
+# Ensure Metadata_heart_number is categorical for manual color mapping
+cp_umap_with_metadata_qc_df["Metadata_heart_number"] = cp_umap_with_metadata_qc_df[
+    "Metadata_heart_number"
+].astype(str)
+
+# Plot UMAP of QC profiles colored by heart number (manual colors, not gradient)
+p = (
+    ggplot(
+        cp_umap_with_metadata_qc_df,
+        aes(x="UMAP0", y="UMAP1", color="Metadata_heart_number"),
+    )
+    + labs(
+        color="Heart Number",
+    )
+    + geom_point(alpha=0.3, size=2)
+    + theme_bw()
+    + theme(
+        axis_title=element_text(size=20),
+        axis_text=element_text(size=16),
+        legend_title=element_text(size=16),
+        legend_text=element_text(size=14),
+        legend_position="bottom",
+        strip_text=element_text(size=16),
+    )
+    + scale_color_manual(values={"7": "#24B200", "25": "#6D006D"})
+)
+# Save the plot
+p.save(figure_dir / "umap_with_QC_hearts_7_25.png", dpi=600, width=width, height=height)
+
 p.show()
 
