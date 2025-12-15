@@ -24,12 +24,15 @@ import matplotlib.pyplot as plt
 # In[2]:
 
 
+# Set plate to process
+plate_to_process = "redo"  # options: "original" or "redo"
+
 # Output dir for coefficients data
-coeff_dir = pathlib.Path("./coeff_data/")
+coeff_dir = pathlib.Path(f"./coeff_data/{plate_to_process}_DMSO_plate")
 coeff_dir.mkdir(parents=True, exist_ok=True)
 
 # Directory of models
-model_dir = pathlib.Path("./models/").resolve(strict=True)
+model_dir = pathlib.Path(f"./models/{plate_to_process}_DMSO_plate").resolve(strict=True)
 
 # Define expected model files (adjust names if your filenames differ)
 model_files = {

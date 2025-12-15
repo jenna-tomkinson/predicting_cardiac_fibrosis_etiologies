@@ -1,5 +1,6 @@
 name: r_fibrosis_env
 channels:
+  - bioconda
   - conda-forge
 dependencies:
   - conda-forge::jupyter
@@ -28,3 +29,4 @@ dependencies:
   - conda-forge::r-magick
   - conda-forge::r-ggextra
   - conda-forge::pre-commit=4.0
+  - bioconda::bioconductor-complexheatmap

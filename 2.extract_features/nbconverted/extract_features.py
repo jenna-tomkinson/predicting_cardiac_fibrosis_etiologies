@@ -31,10 +31,16 @@ path_to_pipeline = pathlib.Path("./pipeline/analysis.cppipe").resolve(strict=Tru
 output_dir = pathlib.Path("./cp_output/")
 output_dir.mkdir(exist_ok=True)
 
+# batch ID for this run
+batch_id = "Plate_2_redo"
+
+# Make output directory for this batch if it doesn't already exist
+(batch_output_dir := output_dir / batch_id).mkdir(exist_ok=True)
+
 # Directory where all images are separated by folder per plate
-images_dir = pathlib.Path("../1.illumination_correction/corrected_images").resolve(
-    strict=True
-)
+images_dir = pathlib.Path(
+    f"../1.illumination_correction/corrected_images/{batch_id}/"
+).resolve(strict=True)
 
 # list for plate names based on folders to use to create dictionary
 plate_names = []
@@ -59,7 +65,7 @@ plate_info_dictionary = {
         "path_to_images": pathlib.Path(list(images_dir.rglob(name))[0]).resolve(
             strict=True
         ),
-        "path_to_output": pathlib.Path(f"{output_dir}/{name}"),
+        "path_to_output": pathlib.Path(f"{output_dir}/{batch_id}/{name}/"),
         "path_to_pipeline": path_to_pipeline,
     }
     for name in plate_names

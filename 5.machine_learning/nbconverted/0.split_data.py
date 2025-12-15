@@ -26,24 +26,35 @@ from sklearn.model_selection import train_test_split
 random_state = 0
 random.seed(random_state)
 
+# Set if training model on redo plate (true) or original (false)
+redo_plate = True
+
 # Path to directory with feature selected profiles
 path_to_feature_selected_data = pathlib.Path(
     "../3.preprocessing_profiles/data/single_cell_profiles/"
 ).resolve(strict=True)
 
-# Find feature selected parquet file (QC applied)
-feature_selected_files = list(
-    path_to_feature_selected_data.glob("*_feature_selected.parquet")
-)
-
-# Make directory for split data
-output_dir = pathlib.Path("./data_splits")
-output_dir.mkdir(exist_ok=True)
+if redo_plate:  # redo plate processing
+    # Find feature selected parquet file (QC applied)
+    feature_selected_path = pathlib.Path(
+        path_to_feature_selected_data
+        / "CARD-CelIns-CX7_251110170001_sc_feature_selected.parquet"
+    )
+    # Make directory for split data
+    output_dir = pathlib.Path("./data_splits/redo_DMSO_plate")
+    output_dir.mkdir(exist_ok=True)
+else:  # process original plate
+    # Find feature selected parquet file (QC applied)
+    feature_selected_path = pathlib.Path(
+        path_to_feature_selected_data
+        / "CARD-CelIns-CX7_251023130003_sc_feature_selected.parquet"
+    )
+    # Make directory for split data
+    output_dir = pathlib.Path("./data_splits/original_DMSO_plate")
+    output_dir.mkdir(exist_ok=True)
 
 # Print out the files found
-print(f"Found {len(feature_selected_files)} feature selected files:")
-for file in feature_selected_files:
-    print(f"- {file.name}")
+print(f"Found feature selected file: {feature_selected_path.stem.split('_')[:2]}")
 
 
 # ## Load in feature selected data
@@ -52,12 +63,10 @@ for file in feature_selected_files:
 
 
 # Load the feature selected file as a DataFrame
-feature_selected_file = feature_selected_files[0]
-plate = pathlib.Path(feature_selected_file).stem.split("_")[0]
-feature_selected_df = pd.read_parquet(feature_selected_file)
+feature_selected_df = pd.read_parquet(feature_selected_path)
 
-print(f"Loaded file: {feature_selected_file.name}")
-print(f"Plate name: {plate}")
+print(f"Loaded file: {feature_selected_path.name}")
+print(f"Plate name: {feature_selected_path.stem.split('_')[0]}")
 print(f"Shape: {feature_selected_df.shape}")
 feature_selected_df.head()
 

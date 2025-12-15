@@ -24,6 +24,9 @@ in_progress/
 ###################################
 # Python .gitignore defaults
 ###################################
+# Ignore vscode settings
+.vscode/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

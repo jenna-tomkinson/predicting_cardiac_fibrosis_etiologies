@@ -15,14 +15,25 @@ import seaborn as sns
 # In[2]:
 
 
-# Load in QC profile
-profile_df = pd.read_parquet(
-    pathlib.Path(
-        "../3.preprocessing_profiles/data/single_cell_profiles/CARD-CelIns-CX7_251023130003_sc_annotated.parquet"
-    )
-)
+# Load in QC profiles from all annotated parquet files (both plates)
+data_dir = pathlib.Path("../3.preprocessing_profiles/data/single_cell_profiles")
+annotated_files = sorted(data_dir.glob("*_annotated.parquet"))
 
-print("Profile DataFrame loaded with shape:", profile_df.shape)
+if not annotated_files:
+    raise FileNotFoundError(f"No annotated parquet files found in {data_dir}")
+
+dfs = []
+for p in annotated_files:
+    df_tmp = pd.read_parquet(p)
+    # keep track of source plate/file
+    df_tmp["source_plate_file"] = p.name
+    dfs.append(df_tmp)
+
+# Concatenate into one profile_df for downstream cells
+profile_df = pd.concat(dfs, ignore_index=True)
+
+print("Loaded annotated files:", [p.name for p in annotated_files])
+print("Combined Profile DataFrame shape:", profile_df.shape)
 profile_df.head()
 
 
@@ -43,11 +54,21 @@ print("Profile DataFrame shape:", profile_df.shape)
 # In[4]:
 
 
-# Plot cell counts per heart_treatment
-counts = profile_df["heart_treatment"].value_counts().sort_index()
+# Compute counts per heart and plate
+counts_df = (
+    profile_df.groupby(["heart_treatment", "Metadata_Plate"])
+    .size()
+    .reset_index(name="cell_count")
+)
 
-plt.figure(figsize=(10, 4))
-sns.barplot(x=counts.index, y=counts.values, palette="viridis")
+plt.figure(figsize=(12, 5))
+sns.barplot(
+    data=counts_df,
+    x="heart_treatment",
+    y="cell_count",
+    hue="Metadata_Plate",
+    palette="viridis",
+)
 plt.xticks(rotation=45)
 plt.xlabel("Heart number")
 plt.ylabel("Cell count")
@@ -71,12 +92,13 @@ col = "Cells_Neighbors_NumberOfNeighbors_Adjacent"
 # Determine order automatically from the data
 order = sorted(profile_df["heart_treatment"].dropna().unique())
 
-plt.figure(figsize=(10, 6))
+plt.figure(figsize=(12, 6))
 
 sns.boxplot(
     data=profile_df.dropna(subset=[col]),
     x="heart_treatment",
     y=col,
+    hue="Metadata_Plate",
     order=order,
     showcaps=True,
     fliersize=2,
@@ -85,7 +107,7 @@ sns.boxplot(
 
 plt.xlabel("Heart Treatment")
 plt.ylabel(col)
-plt.title(f"Boxplot of {col} by heart_treatment")
+plt.title(f"Boxplot of {col} by heart_treatment and plate")
 plt.tight_layout()
 plt.show()
 

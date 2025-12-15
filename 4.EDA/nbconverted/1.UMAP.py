@@ -34,13 +34,23 @@ from pycytominer.cyto_utils import infer_cp_features
 umap_random_seed = 0
 umap_n_components = 2
 
+# Set plate to process (options are 251023130003 (orig), 251110170001 (plate redo))
+plate_id = "251023130003"
+
 # Set embeddings directory
 output_dir = pathlib.Path("results")
 output_dir.mkdir(parents=True, exist_ok=True)
 
 # Figure directory
-figure_dir = pathlib.Path("figures")
+figure_dir = pathlib.Path("figures/umaps")
 figure_dir.mkdir(parents=True, exist_ok=True)
+
+if plate_id == "251023130003":
+    figure_dir_plate = pathlib.Path(f"{figure_dir}/original_plate")
+    figure_dir_plate.mkdir(parents=True, exist_ok=True)
+else:
+    figure_dir_plate = pathlib.Path(f"{figure_dir}/plate_redo")
+    figure_dir_plate.mkdir(parents=True, exist_ok=True)
 
 
 # In[3]:
@@ -50,10 +60,10 @@ figure_dir.mkdir(parents=True, exist_ok=True)
 data_dir = pathlib.Path("../3.preprocessing_profiles/data/single_cell_profiles/")
 
 qc_df = pd.read_parquet(
-    data_dir / "CARD-CelIns-CX7_251023130003_sc_feature_selected.parquet"
+    data_dir / f"CARD-CelIns-CX7_{plate_id}_sc_feature_selected.parquet"
 )
 no_qc_df = pd.read_parquet(
-    data_dir / "CARD-CelIns-CX7_251023130003_sc_feature_selected_no_QC.parquet"
+    data_dir / f"CARD-CelIns-CX7_{plate_id}_sc_feature_selected_no_QC.parquet"
 )
 
 print(f"QC dataset shape: {qc_df.shape}")
@@ -126,6 +136,20 @@ cp_umap_with_metadata_no_qc_df["Metadata_heart_number_label"] = (
     "Heart #" + cp_umap_with_metadata_no_qc_df["Metadata_heart_number"]
 )
 
+# Set categorical ordering for heart number labels
+cp_umap_with_metadata_no_qc_df["Metadata_heart_number_label"] = pd.Categorical(
+    cp_umap_with_metadata_no_qc_df["Metadata_heart_number_label"],
+    categories=[
+        "Heart #2",
+        "Heart #7",
+        "Heart #23",
+        "Heart #25",
+        "Heart #46",
+        "Heart #47",
+    ],
+    ordered=True,
+)
+
 # Reorder so the orange points (failed QC) are plotted on top of blue points (passed QC)
 cp_umap_with_metadata_no_qc_df = cp_umap_with_metadata_no_qc_df.sort_values(
     by="Metadata_QC_status", ascending=False
@@ -174,7 +198,9 @@ p = (
     )
 )
 # Save the plot
-p.save(figure_dir / "facet_umap_no_QC_plot.png", dpi=600, width=width, height=height)
+p.save(
+    figure_dir_plate / "facet_umap_no_QC_plot.png", dpi=600, width=width, height=height
+)
 
 p.show()
 
@@ -228,6 +254,20 @@ cp_umap_with_metadata_qc_df["Metadata_heart_number_label"] = (
     "Heart #" + cp_umap_with_metadata_qc_df["Metadata_heart_number"]
 )
 
+# Set categorical ordering for heart number labels
+cp_umap_with_metadata_qc_df["Metadata_heart_number_label"] = pd.Categorical(
+    cp_umap_with_metadata_qc_df["Metadata_heart_number_label"],
+    categories=[
+        "Heart #2",
+        "Heart #7",
+        "Heart #23",
+        "Heart #25",
+        "Heart #46",
+        "Heart #47",
+    ],
+    ordered=True,
+)
+
 # Plot UMAP of QC profiles colored by actin max intensity and faceted by heart number
 p = (
     ggplot(
@@ -255,7 +295,12 @@ p = (
     + scale_color_gradient2(low="#0072B2", mid="#999999", high="#E69F00", midpoint=0)
 )
 # Save the plot
-p.save(figure_dir / "facet_umap_with_QC_plot.png", dpi=600, width=width, height=height)
+p.save(
+    figure_dir_plate / "facet_umap_with_QC_plot.png",
+    dpi=600,
+    width=width,
+    height=height,
+)
 
 p.show()
 
@@ -300,7 +345,7 @@ p = (
 
 # Save and show
 p.save(
-    figure_dir / "facet_umap_qc_heart2_by_treatment.png",
+    figure_dir_plate / "facet_umap_qc_heart2_by_treatment.png",
     dpi=600,
     width=width,
     height=height,
@@ -387,7 +432,12 @@ p = (
     + scale_color_manual(values={"7": "#24B200", "25": "#6D006D"})
 )
 # Save the plot
-p.save(figure_dir / "umap_with_QC_hearts_7_25.png", dpi=600, width=width, height=height)
+p.save(
+    figure_dir_plate / "umap_with_QC_hearts_7_25.png",
+    dpi=600,
+    width=width,
+    height=height,
+)
 
 p.show()
 

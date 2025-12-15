@@ -30,7 +30,7 @@ import cp_parallel
 run_name = "illum_correction"
 
 # set up the batch name for the plate(s) being processed
-batch_id = "Plate_2_DMSO"
+batch_id = "Plate_2_redo"
 
 
 # ### Set up paths
@@ -41,6 +41,9 @@ batch_id = "Plate_2_DMSO"
 # set main output dir for all plates if it doesn't exist
 output_dir = pathlib.Path("./corrected_images")
 output_dir.mkdir(exist_ok=True)
+
+# make directory for batch if it doesn't exist
+(batch_output_dir := output_dir / batch_id).mkdir(exist_ok=True)
 
 # set base directory for where the images are located (WILL NEED TO CHANGE ON YOUR LOCAL MACHINE)
 base_dir = pathlib.Path("/media/18tbdrive/CFReT_screening_data/DMSO_data").resolve(
@@ -75,7 +78,7 @@ plate_info_dictionary = {
         "path_to_images": pathlib.Path(list(images_dir.rglob(name))[0]).resolve(
             strict=True
         ),
-        "path_to_output": pathlib.Path(f"{output_dir}/{name}"),
+        "path_to_output": pathlib.Path(f"{output_dir}/{batch_id}/{name}/"),
         "path_to_pipeline": path_to_pipeline,
     }
     for name in plate_names

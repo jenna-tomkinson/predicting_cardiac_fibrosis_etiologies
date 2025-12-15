@@ -7,12 +7,14 @@ suppressPackageStartupMessages({
     library(RColorBrewer)
 })
 
-output_dir <- "figures"
+plate_to_process <- "redo_DMSO_plate"  # options: "original" or "redo"
+
+output_dir <- file.path("figures", plate_to_process)
 if (!dir.exists(output_dir)) {
     dir.create(output_dir, recursive = TRUE)
 }
 
-pr_results <- read_parquet("./performance_metrics/all_models_pr_curve_results.parquet")
+pr_results <- read_parquet(file.path("performance_metrics", plate_to_process, "all_models_pr_curve_results.parquet"))
 
 head(pr_results)
 
@@ -48,7 +50,7 @@ ggsave(file.path(output_dir, "all_models_pr_curves.png"), all_models_pr_curves, 
 
 all_models_pr_curves
 
-probability_results <- read_parquet("./performance_metrics/all_models_predicted_probabilities.parquet")
+probability_results <- read_parquet(file.path("performance_metrics", plate_to_process, "all_models_predicted_probabilities.parquet"))
 
 head(probability_results)
 
@@ -177,7 +179,7 @@ accuracy_barplot
 
 
 # Load in PR curve results for multi-class model
-multi_class_pr_results <- read_parquet("./performance_metrics/multi_class_pr_results.parquet")
+multi_class_pr_results <- read_parquet(file.path("performance_metrics", plate_to_process, "multi_class_pr_results.parquet"))
 
 head(multi_class_pr_results)
 
@@ -222,7 +224,7 @@ ggsave(file.path(output_dir, "pr_curves_multiclass.png"), multi_class_pr_results
 multi_class_pr_results_plot
 
 # Load in the accuracy results for multi-class model
-multi_class_accuracy_results <- read_parquet("./performance_metrics/multi_class_heart_accuracy.parquet")
+multi_class_accuracy_results <- read_parquet(file.path("performance_metrics", plate_to_process, "multi_class_heart_accuracy.parquet"))
 
 # Print the first few rows of the accuracy results
 head(multi_class_accuracy_results)

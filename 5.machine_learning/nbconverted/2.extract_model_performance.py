@@ -193,20 +193,22 @@ def get_predicted_probabilities(
 # In[4]:
 
 
+# Set plate to process (original or redo)
+plate_to_process = "redo"  # options: "original" or "redo"
+
 # Directory with the training and testing datasets per plate (or combined per batch)
-data_dir = pathlib.Path("data_splits")
+data_dir = pathlib.Path(f"data_splits/{plate_to_process}_DMSO_plate")
 
 # Directory with the trained models
-model_dir = pathlib.Path("models")
+model_dir = pathlib.Path(f"models/{plate_to_process}_DMSO_plate")
 
 # Directory with encoder
-encoder_dir = pathlib.Path("encoder_results")
-
-# Directory with the training indices
-train_indices_dir = pathlib.Path("training_indices")
+encoder_dir = pathlib.Path(f"encoder_results/{plate_to_process}_DMSO_plate")
 
 # Output directory the performance metrics
-performance_metrics_dir = pathlib.Path("performance_metrics")
+performance_metrics_dir = pathlib.Path(
+    f"performance_metrics/{plate_to_process}_DMSO_plate"
+)
 performance_metrics_dir.mkdir(exist_ok=True)
 
 # Label being predicted
@@ -217,9 +219,6 @@ label = "Metadata_cell_type"
 
 # In[5]:
 
-
-# Get the list of encoder files
-encoder_dir = pathlib.Path("./encoder_results")
 
 # Extract model names from model filenames
 model_names = set(

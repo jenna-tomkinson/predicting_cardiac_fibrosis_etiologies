@@ -30,24 +30,33 @@ from training_utils import downsample_data, get_X_y_data
 # Set numpy seed for reproducibility
 np.random.seed(0)
 
-# Path to training/testing datasets
-training_data_path = pathlib.Path("./data_splits")
-
-# Find all training datasets
-training_files = list(training_data_path.rglob("training_split.parquet"))
+# Set if processing redo plate (true) or original plate (false)
+redo_plate = True
 
 # Metadata column used for prediction class
 label = "Metadata_cell_type"
 
-# Directories for outputs
-model_dir = pathlib.Path("./models")
-model_dir.mkdir(exist_ok=True, parents=True)
+if redo_plate:
+    # Path to training/testing datasets for redo plate
+    training_data_path = pathlib.Path("./data_splits/redo_DMSO_plate")
+    # Directories for outputs
+    model_dir = pathlib.Path("./models/redo_DMSO_plate")
+    model_dir.mkdir(exist_ok=True, parents=True)
 
-encoder_dir = pathlib.Path("./encoder_results")
-encoder_dir.mkdir(exist_ok=True, parents=True)
+    encoder_dir = pathlib.Path("./encoder_results/redo_DMSO_plate")
+    encoder_dir.mkdir(exist_ok=True, parents=True)
+else:  # process original plate
+    # Path to training/testing datasets for original plate
+    training_data_path = pathlib.Path("./data_splits/original_DMSO_plate")
+    # Directories for outputs
+    model_dir = pathlib.Path("./models/original_DMSO_plate")
+    model_dir.mkdir(exist_ok=True, parents=True)
 
-# training_indices_dir = pathlib.Path("./training_indices")
-# training_indices_dir.mkdir(exist_ok=True, parents=True)
+    encoder_dir = pathlib.Path("./encoder_results/original_DMSO_plate")
+    encoder_dir.mkdir(exist_ok=True, parents=True)
+
+# Find all training datasets
+training_files = list(training_data_path.rglob("training_split.parquet"))
 
 print(f"Found {len(training_files)} training datasets.")
 
