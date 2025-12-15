@@ -12,3 +12,13 @@ jupyter nbconvert --to script --output-dir=nbconverted/ *.ipynb
 python nbconverted/0.check_actin_intensity.py
 python nbconverted/1.UMAP.py
 python nbconverted/2.cell_count_check.py
+python nbconverted/4.correlation_heatmaps.py
+
+# deactivate the conda environment
+conda deactivate
+# activate R environment
+conda activate fibrosis_R_env
+
+# run R script for EDA
+Rscript nbconverted/feature_heatmaps_R.r
+
