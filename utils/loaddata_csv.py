@@ -156,6 +156,7 @@ def parse_image_path(
     well_site_channel_pattern: PatternLike,
     plate_prefix_pattern: PatternLike,
     plate_folder_pattern: PatternLike,
+    add_conditions_col: bool = True,
     default_plate: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
@@ -173,6 +174,8 @@ def parse_image_path(
         Regex pattern used to infer the plate from the filename.
     plate_folder_pattern : PatternLike
         Regex pattern used to infer the plate and condition from parent folder names.
+    add_conditions_col : bool, default=True
+        Whether to add a Metadata_Condition column to the output dictionary.
     default_plate : Optional[str], default=None
         Fallback plate identifier if inference fails.
 
@@ -194,7 +197,7 @@ def parse_image_path(
     # Set channel for file and path name per image path
     channel = match.group("channel").lower()
 
-    return {
+    record = {
         "Metadata_Plate": infer_plate(
             image_path,
             plate_prefix_pattern=plate_prefix_pattern,
@@ -203,13 +206,17 @@ def parse_image_path(
         ),
         "Metadata_Well": match.group("well").upper(),
         "Metadata_Site": match.group("site").zfill(2),
-        "Metadata_Condition": infer_condition(
-            image_path, plate_folder_pattern=plate_folder_pattern
-        ),
         "ImageName": channel_map[channel],
         "FileName": image_path.name,
         "PathName": str(image_path.parent),
     }
+
+    if add_conditions_col:
+        record["Metadata_Condition"] = infer_condition(
+            image_path, plate_folder_pattern=plate_folder_pattern
+        )
+
+    return record
 
 
 def build_loaddata_csv(
@@ -220,6 +227,7 @@ def build_loaddata_csv(
     plate_prefix_pattern: PatternLike,
     plate_folder_pattern: PatternLike,
     default_plate: Optional[str] = None,
+    add_conditions_col: bool = True,
 ) -> pd.DataFrame:
     """
     Build a LoadData-style dataframe from image paths.
@@ -257,6 +265,10 @@ def build_loaddata_csv(
         )
         for column in loaddata_columns
     ]
+    if not add_conditions_col:
+        loaddata_columns = [
+            column for column in loaddata_columns if column != "Metadata_Condition"
+        ]
 
     # Collect records of metadata and file paths for loaddata csv file
     records = [
@@ -267,6 +279,7 @@ def build_loaddata_csv(
             plate_prefix_pattern=plate_prefix_pattern,
             plate_folder_pattern=plate_folder_pattern,
             default_plate=default_plate,
+            add_conditions_col=add_conditions_col,
         )
         for path in image_paths
     ]
@@ -277,12 +290,9 @@ def build_loaddata_csv(
         return pd.DataFrame(columns=loaddata_columns)
 
     # Set expected metadata columns
-    metadata_columns = [
-        "Metadata_Plate",
-        "Metadata_Well",
-        "Metadata_Site",
-        "Metadata_Condition",
-    ]
+    metadata_columns = ["Metadata_Plate", "Metadata_Well", "Metadata_Site"]
+    if add_conditions_col:
+        metadata_columns.append("Metadata_Condition")
 
     # Drop duplicates if found
     duplicate_mask = long_df.duplicated([*metadata_columns, "ImageName"], keep=False)
@@ -319,9 +329,7 @@ def build_loaddata_csv(
         if column not in loaddata_df.columns:
             loaddata_df[column] = pd.NA
 
-    return loaddata_df.loc[:, loaddata_columns].sort_values(
-        ["Metadata_Plate", "Metadata_Well", "Metadata_Site", "Metadata_Condition"]
-    )
+    return loaddata_df.loc[:, loaddata_columns].sort_values(metadata_columns)
 
 
 def summarize_missing_channels(loaddata_df: pd.DataFrame, channel_map: Dict[str, str]):

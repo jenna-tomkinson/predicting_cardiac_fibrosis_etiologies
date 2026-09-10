@@ -36,9 +36,8 @@ loaddata_dir = pathlib.Path("./loaddata_csvs").resolve(strict=True)
 
 # list for plate names based on folders to use to create dictionary
 plate_names = []
-
 # use the plate name from loaddata csvs to create dictionary for parallelization
-for file_path in loaddata_dir.iterdir():
+for file_path in loaddata_dir.glob("loaddata_with_illum_*.csv"):
     plate_names.append(str(file_path.stem.split("loaddata_with_illum_")[1]))
 
 print("There are a total of", len(plate_names), "plates. The names of the plates are:")
@@ -55,7 +54,7 @@ for plate in plate_names:
 plate_info_dictionary = {
     name: {
         "path_to_loaddata": pathlib.Path(
-            list(loaddata_dir.rglob(f"loaddata_with_illum_{name}.csv"))[0]
+            next(iter(loaddata_dir.rglob(f"loaddata_with_illum_{name}.csv")))
         ).resolve(strict=True),
         "path_to_output": pathlib.Path(f"{output_dir}/{name}/"),
         "path_to_pipeline": path_to_pipeline,

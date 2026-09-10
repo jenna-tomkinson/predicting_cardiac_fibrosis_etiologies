@@ -30,9 +30,18 @@ sys.path.append("../utils")
 import loaddata_csv
 
 
-# ## Set regular expressions for how to find metadata in file and folder names
+# ## Set if the run is specific for HLHS or not
 
 # In[2]:
+
+
+# Set if the dataset is run HLHS run (different formatting)
+hlhs_run = False
+
+
+# ## Set regular expressions for how to find metadata in file and folder names
+
+# In[3]:
 
 
 # Set the expected image file naming pattern for well site and channel
@@ -55,24 +64,41 @@ plate_folder_pattern = re.compile(r"CARD-CelIns-CX7_[A-Za-z0-9_-]+")
 # 
 # Update `IMAGE_INPUTS` to point to one or more image directories or individual image files. `Metadata_Condition` is taken from each image file's parent directory name.
 
-# In[3]:
+# In[4]:
 
 
 repo_root = Path("..").resolve()
 
 # Path(s) to image directories
-IMAGE_INPUTS = [
-    Path(
-        "/home/jenna/mnt/bandicoot/CFReT_subtyping_data/images/x2/CARD-CelIns-CX7_260407120001"
-    ),
-    Path(
-        "/home/jenna/mnt/bandicoot/CFReT_subtyping_data/images/x3/CARD-CelIns-CX7_260407190001"
-    ),
-]
+if hlhs_run:
+    IMAGE_INPUTS = [
+        Path(
+            "/home/jenna/mnt/bandicoot/CFReT_subtyping_data/images/x2/CARD-CelIns-CX7_260407120001"
+        ),
+        Path(
+            "/home/jenna/mnt/bandicoot/CFReT_subtyping_data/images/x3/CARD-CelIns-CX7_260407190001"
+        ),
+    ]
+else:
+    IMAGE_INPUTS = [
+        Path(
+            "/home/jenna/mnt/Way_McKinsey_Cardiac_Fibrosis/Heart_Subtypes_data/2_with NF/CARD-CelIns-CX7_260814100001"
+        ),
+        Path(
+            "/home/jenna/mnt/Way_McKinsey_Cardiac_Fibrosis/Heart_Subtypes_data/2_with NF/CARD-CelIns-CX7_260817090001"
+        ),
+        Path(
+            "/home/jenna/mnt/Way_McKinsey_Cardiac_Fibrosis/Heart_Subtypes_data/2_with NF/CARD-CelIns-CX7_260817180001"
+        )
+    ]
 
-# Set path to output LoadData CSVs
+# Set main path to output LoadData CSVs
 OUTPUT_DIR = Path("loaddata_csvs")
 OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
+
+if hlhs_run:
+    OUTPUT_DIR = Path("loaddata_csvs/loaddata_csvs_hlhs")
+    OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
 
 # Used only if a plate cannot be inferred from the file path or filename.
 DEFAULT_PLATE = None
@@ -102,8 +128,13 @@ LOADDATA_COLUMNS = [
 
 # ## Build and save the LoadData CSV
 
-# In[4]:
+# In[5]:
 
+
+if hlhs_run:
+    ADD_CONDITIONS_COL=True
+else:
+    ADD_CONDITIONS_COL=False
 
 image_paths = loaddata_csv.collect_image_paths(
     IMAGE_INPUTS, image_extensions=IMAGE_EXTENSIONS
@@ -114,6 +145,7 @@ loaddata_df = loaddata_csv.build_loaddata_csv(
     image_paths,
     channel_map=CHANNEL_MAP,
     loaddata_columns=LOADDATA_COLUMNS,
+    add_conditions_col=ADD_CONDITIONS_COL,
     default_plate=DEFAULT_PLATE,
     well_site_channel_pattern=well_site_channel_pattern,
     plate_prefix_pattern=plate_prefix_pattern,

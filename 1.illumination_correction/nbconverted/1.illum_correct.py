@@ -7,7 +7,7 @@
 
 # ## Import libraries
 
-# In[2]:
+# In[1]:
 
 
 import pathlib
@@ -23,16 +23,19 @@ import cp_parallel
 
 # ### Set the constants
 
-# In[3]:
+# In[2]:
 
 
 # set the run type for the parallelization
 run_name = "illum_correction"
 
+# set if this run if for the HLHS dataset
+hlhs_run = False
+
 
 # ### Set up paths
 
-# In[5]:
+# In[3]:
 
 
 # set main output dir for all plates if it doesn't exist
@@ -41,19 +44,25 @@ output_dir.mkdir(exist_ok=True)
 
 # set base directory for where the images are located (WILL NEED TO CHANGE ON YOUR LOCAL MACHINE)
 base_dir = pathlib.Path(
-    "/home/jenna/mnt/bandicoot/CFReT_subtyping_data/images"
+    "/home/jenna/mnt/Way_McKinsey_Cardiac_Fibrosis/Heart_Subtypes_data/2_with NF/"
 ).resolve(strict=True)
 
 # list for plate names based on folders to use to create dictionary
 plate_names = []
 
-# find the plates inside each condition plate
-for parent in ["x2", "x3"]:
-    parent_dir = base_dir / parent
+if hlhs_run:
+    # find the plates inside each condition plate
+    for parent in ["x1", "x2", "x3"]:
+        parent_dir = base_dir / parent
 
-    # Read the plate name from child folder
+        # Read the plate name from child folder
+        plate_names.extend(
+            [folder.name for folder in parent_dir.iterdir() if folder.is_dir()]
+        )
+else:
+    # there are likely no conditions in this case, so just read the plate names from the base directory
     plate_names.extend(
-        [folder.name for folder in parent_dir.iterdir() if folder.is_dir()]
+        [folder.name for folder in base_dir.iterdir() if folder.is_dir()]
     )
 
 # Sort plate names
@@ -66,7 +75,7 @@ for plate in plate_names:
 
 # ## Create dictionary with all plate data to run CellProfiler in parallel
 
-# In[7]:
+# In[4]:
 
 
 # set path to the illum pipeline
@@ -78,7 +87,7 @@ loaddata_dir = pathlib.Path("./loaddata_csvs").resolve(strict=True)
 # create plate info dictionary with all parts of the CellProfiler CLI command to run in parallel
 plate_info_dictionary = {
     name: {
-        "path_to_loaddata": list(loaddata_dir.rglob(f"loaddata_{name}.csv"))[0].resolve(
+        "path_to_loaddata": next(iter(loaddata_dir.rglob(f"loaddata_{name}.csv"))).resolve(
             strict=True
         ),
         "path_to_output": pathlib.Path(f"{output_dir}/{name}/"),

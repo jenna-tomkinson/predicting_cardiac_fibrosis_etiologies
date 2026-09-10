@@ -1,4 +1,7 @@
-CellProfiler Pipeline: http://www.cellprofiler.org
+Key,Value
+CellProfiler_Version,4.2.8
+Metadata_GroupingTags,"[""Metadata_Plate""]"
+Pipeline_Pipeline,"CellProfiler Pipeline: http://www.cellprofiler.org
 Version:5
 DateRevision:428
 GitHash:
@@ -36,7 +39,7 @@ MeasureImageQuality:[module_num:2|svn_version:'Unknown'|variable_revision_number
     Assign pixels in the middle intensity class to the foreground or the background?:Foreground
 
 ExportToSpreadsheet:[module_num:3|svn_version:'Unknown'|variable_revision_number:13|show_window:False|notes:[]|batch_state:array([], dtype=uint8)|enabled:True|wants_pause:False]
-    Select the column delimiter:Comma (",")
+    Select the column delimiter:Comma ("","")
     Add image metadata columns to your object data file?:No
     Add image file and folder names to your object data file?:No
     Select the measurements to export:No
@@ -497,3 +500,5 @@ SaveImages:[module_num:24|svn_version:'Unknown'|variable_revision_number:16|show
     Base image folder:Elsewhere...|
     How to save the series:T (Time)
     Save with lossless compression?:No
+"
+Run_Timestamp,2026-09-04T10:18:13.592162

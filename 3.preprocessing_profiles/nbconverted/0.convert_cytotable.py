@@ -8,7 +8,10 @@
 # In[1]:
 
 
+import argparse
 import pathlib
+import sys
+
 import pandas as pd
 
 # cytotable will merge objects from SQLite file into single cells and save as parquet file
@@ -20,33 +23,70 @@ import logging
 logging.getLogger().setLevel(logging.ERROR)
 
 
-# ## Set paths and variables
+# ## Papermill parameters
 
 # In[ ]:
+
+
+# Set if this run is for the HLHS dataset (will be updated by papermill)
+hlhs_run = False
+
+
+# Optional CLI fallback for direct script-style execution.
+def _str_to_bool(value):
+    return str(value).strip().lower() in ("1", "true", "yes")
+
+
+parser = argparse.ArgumentParser(add_help=False)
+parser.add_argument(
+    "--hlhs-run", dest="hlhs_run", type=_str_to_bool, default=hlhs_run
+)
+args, _ = parser.parse_known_args(sys.argv[1:])
+hlhs_run = args.hlhs_run
+
+
+# ## Set paths and variables
+
+# In[2]:
 
 
 # preset configurations based on typical CellProfiler outputs
 preset = "cellprofiler_sqlite_pycytominer"
 
-# update preset to include site metadata and cell counts
-joins = presets.config["cellprofiler_sqlite_pycytominer"]["CONFIG_JOINS"].replace(
-    "Image_Metadata_Well,",
-    "Image_Metadata_Well, Image_Metadata_Site, Image_Metadata_Condition,",
-)
+if hlhs_run:
+    # update preset to include site metadata and cell counts
+    joins = presets.config["cellprofiler_sqlite_pycytominer"]["CONFIG_JOINS"].replace(
+        "Image_Metadata_Well,",
+        "Image_Metadata_Well, Image_Metadata_Site, Image_Metadata_Condition,",
+    )
+    # Add the PathName columns separately
+    joins = joins.replace(
+        "COLUMNS('Image_FileName_.*'),",
+        "COLUMNS('Image_FileName_.*'),\n COLUMNS('Image_PathName_.*'),",
+    )
+else:
+    # update preset to include site metadata and cell counts
+    joins = presets.config["cellprofiler_sqlite_pycytominer"]["CONFIG_JOINS"].replace(
+        "Image_Metadata_Well,",
+        "Image_Metadata_Well, Image_Metadata_Site,",
+    )
 
-# Add the PathName columns separately
-joins = joins.replace(
-    "COLUMNS('Image_FileName_.*'),",
-    "COLUMNS('Image_FileName_.*'),\n COLUMNS('Image_PathName_.*'),",
-)
+    # Add the PathName columns separately
+    joins = joins.replace(
+        "COLUMNS('Image_FileName_.*'),",
+        "COLUMNS('Image_FileName_.*'),\n COLUMNS('Image_PathName_.*'),",
+    )
 
 # type of file output
 dest_datatype = "parquet"
 
-# set path to directory with SQLite files
-sqlite_dir = pathlib.Path("../2.extract_features/cp_output")
-# directory for processed data
-output_dir = pathlib.Path("data/converted_profiles")
+# set path to directory with SQLite files and output directory for processed data
+if hlhs_run:
+    sqlite_dir = pathlib.Path("../2.extract_features/cp_output/hlhs_run")
+    output_dir = pathlib.Path("data/converted_profiles/hlhs")
+else:
+    sqlite_dir = pathlib.Path("../2.extract_features/cp_output")
+    output_dir = pathlib.Path("data/converted_profiles")
 output_dir.mkdir(parents=True, exist_ok=True)
 
 plate_names = []
@@ -67,7 +107,8 @@ for name in plate_names:
 # In[3]:
 
 
-for file_path in sqlite_dir.iterdir():
+for plate_name in plate_names:
+    file_path = sqlite_dir / plate_name
     output_path = pathlib.Path(f"{output_dir}/{file_path.stem}_converted.parquet")
     print("Starting conversion with cytotable for plate:", file_path.stem)
     # Merge single cells and output as parquet file
@@ -85,10 +126,14 @@ print("All plates have been converted with cytotable!")
 
 # # Load in converted profiles to update
 
-# In[ ]:
+# In[4]:
 
 
 for file_path in output_dir.iterdir():
+    # Skip anything that isn't a parquet file directly in this directory (e.g. subfolders)
+    if not (file_path.is_file() and file_path.suffix == ".parquet"):
+        continue
+
     # Load the DataFrame from the Parquet file
     df = pd.read_parquet(file_path)
 

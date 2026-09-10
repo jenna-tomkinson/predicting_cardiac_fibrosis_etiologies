@@ -16,7 +16,7 @@
 # | d4 | OrigDNA |
 # 
 
-# In[1]:
+# In[ ]:
 
 
 from pathlib import Path
@@ -29,7 +29,7 @@ import loaddata_csv
 
 # ## Set paths and variables
 
-# In[2]:
+# In[ ]:
 
 
 # Set path to find original loaddata csv files
@@ -54,11 +54,11 @@ CHANNEL_MAP = {
 
 # ## Update and save the LoadData CSV with illumination function columns
 
-# In[3]:
+# In[4]:
 
 
 updated_dfs = loaddata_csv.add_illumination_columns_to_loaddata_csvs(
-    loaddata_csv_paths=list(orig_loaddata_csvs.rglob("loaddata_*.csv")),
+    loaddata_csv_paths=list(orig_loaddata_csvs.glob("loaddata_*.csv")),
     illum_directory=illum_directory,
     channel_map=CHANNEL_MAP,
     output_dir=output_dir,

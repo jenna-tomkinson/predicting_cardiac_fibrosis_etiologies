@@ -1,0 +1,33 @@
+{
+    "_source": "3.preprocessing_profiles/1.sc_quality_control.ipynb (as run for the HLHS dataset; executed copies in 3.preprocessing_profiles/qc_notebooks/)",
+    "run": "hlhs",
+    "plates": [
+        "CARD-CelIns-CX7_260407120001",
+        "CARD-CelIns-CX7_260407190001"
+    ],
+    "default_thresholds": {
+        "oversegmented_nuclei": {
+            "Nuclei_Intensity_MassDisplacement_DNA": 1.0,
+            "Nuclei_AreaShape_Compactness": 1.0
+        },
+        "poorly_segmented_nuclei": {
+            "Nuclei_AreaShape_Solidity": -2.0
+        },
+        "undersegmented_cells": {
+            "Cells_AreaShape_Area": -1.0
+        },
+        "blurry_cells": {
+            "Nuclei_Texture_InfoMeas1_DNA_3_02_256": -1.5,
+            "Cells_Texture_InfoMeas1_Actin_3_02_256": -1.0
+        }
+    },
+    "plate_overrides": {
+        "CARD-CelIns-CX7_260407120001": {
+            "oversegmented_nuclei": {
+                "Nuclei_Intensity_MassDisplacement_DNA": 2.0,
+                "Nuclei_AreaShape_Compactness": 2.0
+            }
+        }
+    },
+    "notes": "Only the oversegmented_nuclei thresholds differ between the two HLHS plates. Plate CARD-CelIns-CX7_260407120001 uses looser (2.0/2.0) thresholds than CARD-CelIns-CX7_260407190001 and every other plate seen so far, which use 1.0/1.0. The notebook has hardcoded this as a plate-name if/else since at least commit 9187d3a; the reason for the discrepancy (e.g. plate-specific imaging/segmentation quality) was not documented at the time, so it is preserved here as-is rather than reconciled. All other threshold sets (poorly_segmented_nuclei, undersegmented_cells, blurry_cells) are shared across both HLHS plates."
+}

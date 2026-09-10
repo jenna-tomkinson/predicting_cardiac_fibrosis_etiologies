@@ -8,37 +8,62 @@
 # In[1]:
 
 
+import argparse
 import pathlib
 import pprint
+import sys
 
 import pandas as pd
+from pycytominer import annotate, feature_select, normalize
 
-from pycytominer import annotate, normalize, feature_select
 
-
-# ## Set paths and variables
+# ## Papermill parameters
 
 # In[2]:
 
 
-# Path to directories
-cleaned_dir = pathlib.Path("./data/cleaned_profiles")
+# Set if this run is for the HLHS dataset (will be updated by papermill)
+hlhs_run = False
 
-# output path for single-cell profiles
-output_dir = pathlib.Path("./data/single_cell_profiles")
+
+# Optional CLI fallback for direct script-style execution.
+def _str_to_bool(value):
+    return str(value).strip().lower() in ("1", "true", "yes")
+
+
+parser = argparse.ArgumentParser(add_help=False)
+parser.add_argument(
+    "--hlhs-run", dest="hlhs_run", type=_str_to_bool, default=hlhs_run
+)
+args, _ = parser.parse_known_args(sys.argv[1:])
+hlhs_run = args.hlhs_run
+
+
+# ## Set paths and variables
+
+# In[3]:
+
+
+# Path to directories
+if hlhs_run:
+    cleaned_dir = pathlib.Path("./data/cleaned_profiles/hlhs")
+    output_dir = pathlib.Path("./data/single_cell_profiles/hlhs")
+else:
+    cleaned_dir = pathlib.Path("./data/cleaned_profiles")
+    output_dir = pathlib.Path("./data/single_cell_profiles")
 output_dir.mkdir(parents=True, exist_ok=True)
 
 # operations to perform for feature selection
 feature_select_ops = [
+    "drop_na_columns",
+    "blocklist",
     "variance_threshold",
     "correlation_threshold",
-    "blocklist",
-    "drop_na_columns",
-]
+] # run drop na columns first for improved speed
 
 # Extract the plate names from the file name
 plate_names = [
-    file.stem.replace("_cleaned", "") for file in cleaned_dir.rglob("*.parquet")
+    file.stem.replace("_cleaned", "") for file in cleaned_dir.glob("*.parquet")
 ]
 
 
@@ -56,19 +81,26 @@ pprint.pprint(to_process)
 
 # ## Set dictionary with plates to process
 
-# In[3]:
+# In[ ]:
 
+
+# Select the platemap based on the run type
+platemap_file = (
+    "hlhs_heart_failure_subtypes_platemap.csv"
+    if hlhs_run
+    else "nf_heart_failure_subtypes_platemap.csv"
+)
 
 # Create plate info dictionary
 plate_info_dictionary = {
     name: {
         "profile_path": str(
-            pathlib.Path(list(cleaned_dir.rglob(f"{name}_*.parquet"))[0]).resolve(
+            pathlib.Path(next(iter(cleaned_dir.glob(f"{name}_*.parquet")))).resolve(
                 strict=True
             )
         ),
         "platemap_path": pathlib.Path(
-            "../0.download_data/metadata/heart_failure_subtypes_platemap.csv"
+            f"../0.download_data/metadata/platemaps/{platemap_file}"
         ).resolve(strict=True),
     }
     for name in to_process
@@ -80,7 +112,7 @@ pprint.pprint(plate_info_dictionary, indent=4)
 
 # ## Process data with pycytominer
 
-# In[4]:
+# In[5]:
 
 
 for plate, info in plate_info_dictionary.items():
@@ -170,6 +202,7 @@ for plate, info in plate_info_dictionary.items():
         output_normalized_file,
         operation=feature_select_ops,
         na_cutoff=0,
+        blocklist_file="./blocklist_features.txt",
         output_file=output_feature_select_file,
         output_type="parquet",
     )
@@ -189,7 +222,7 @@ for plate, info in plate_info_dictionary.items():
     )
 
 
-# In[5]:
+# In[6]:
 
 
 # Check output file

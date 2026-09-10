@@ -6,8 +6,8 @@ ModuleCount:20
 HasImagePlaneDetails:False
 
 LoadData:[module_num:1|svn_version:'Unknown'|variable_revision_number:6|show_window:False|notes:[]|batch_state:array([], dtype=uint8)|enabled:True|wants_pause:False]
-    Input data file location:Default Input Folder|predicting_cardiac_fibrosis_etiologies/2.extract_features/loaddata_csvs
-    Name of the file:loaddata_with_illum_CARD-CelIns-CX7_260407190001.csv
+    Input data file location:Default Input Folder sub-folder|predicting_cardiac_fibrosis_etiologies/2.extract_features/loaddata_csvs
+    Name of the file:loaddata_with_illum_CARD-CelIns-CX7_260814100001.csv
     Load images based on this data?:Yes
     Base image location:Default Input Folder|
     Process just a range of rows?:No
@@ -95,7 +95,7 @@ IdentifySecondaryObjects:[module_num:4|svn_version:'Unknown'|variable_revision_n
     Lower and upper bounds on threshold:0.0,1.0
     Manual threshold:-1
     Select the measurement to threshold with:None
-    Two-class or three-class thresholding?:Two classes
+    Two-class or three-class thresholding?:Three classes
     Log transform before thresholding?:Yes
     Assign pixels in the middle intensity class to the foreground or the background?:Foreground
     Size of adaptive window:50

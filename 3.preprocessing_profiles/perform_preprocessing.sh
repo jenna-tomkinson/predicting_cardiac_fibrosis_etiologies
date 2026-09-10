@@ -31,7 +31,8 @@ for converted_profile in "${converted_profiles[@]}"; do
     papermill \
         1.sc_quality_control.ipynb \
         "qc_notebooks/${plate}_sc_quality_control.ipynb" \
-        -p plate_name "$plate"
+        -p plate_name "$plate" \
+        -p render_images false
 done
 
 python nbconverted/2.single_cell_processing.py
