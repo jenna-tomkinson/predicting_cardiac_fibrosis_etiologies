@@ -107,3 +107,53 @@ def downsample_data(data: [pathlib.Path | pd.DataFrame], label: str) -> pd.DataF
     )
 
     return df_downsampled
+
+
+def get_heart_grouped_folds(
+    df: pd.DataFrame,
+    group_col: str,
+    strata_col: str,
+    n_splits: int = 3,
+    random_state: int = 0,
+) -> list[tuple[np.array, np.array]]:
+    """Get cross validation folds where all single cells from a heart are in the same fold and
+    the hearts from each class (e.g., heart failure subtype) are spread evenly across the folds.
+
+    Args:
+        df (pd.DataFrame): Data frame containing the training data (in the same row order as X and y).
+        group_col (str): Name of the Metadata column with the heart each single cell comes from.
+        strata_col (str): Name of the Metadata column with the class of each heart to spread across
+            folds (NaNs are treated as their own class).
+        n_splits (int, optional): Number of folds. Defaults to 3.
+        random_state (int, optional): Seed for randomly ordering the hearts. Defaults to 0.
+
+    Returns:
+        list[tuple[np.array, np.array]]: List of (train, validation) positional indices per fold,
+            which can be used as the `cv` parameter in scikit-learn.
+
+    Raises:
+        ValueError: If a class has fewer hearts than the number of folds.
+    """
+    rng = np.random.default_rng(random_state)
+
+    # Get the class per heart
+    hearts_df = df[[group_col, strata_col]].drop_duplicates()
+    hearts_df[strata_col] = hearts_df[strata_col].fillna("NaN")
+
+    # Assign the hearts from each class across the folds (one at a time in random order)
+    heart_to_fold = {}
+    for strata, strata_df in hearts_df.groupby(strata_col):
+        hearts = rng.permutation(np.sort(strata_df[group_col].unique()))
+        if len(hearts) < n_splits:
+            raise ValueError(
+                f"Class '{strata}' has {len(hearts)} hearts, which is fewer than {n_splits} folds."
+            )
+        for i, heart in enumerate(hearts):
+            heart_to_fold[heart] = i % n_splits
+
+    # Get the positional indices for the training and validation data per fold
+    fold_per_row = df[group_col].map(heart_to_fold).values
+    return [
+        (np.where(fold_per_row != fold)[0], np.where(fold_per_row == fold)[0])
+        for fold in range(n_splits)
+    ]

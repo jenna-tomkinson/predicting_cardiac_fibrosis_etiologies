@@ -4,14 +4,18 @@
 # # Check actin intensity distribution
 # 
 # Load the QC-normalized single-cell profiles and compare the distribution of actin intensity between cells labeled `Healthy` and `Failing`.
+# Set `hlhs_run = True` to use the HLHS plates instead of the default subtyping plates.
 
 # In[1]:
 
 
-import pandas as pd
+import argparse
+import sys
 from pathlib import Path
-import seaborn as sns
+
 import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
 
 plt.rcParams.update({"figure.figsize": (8, 5), "figure.dpi": 100})
 sns.set_style("whitegrid")
@@ -20,10 +24,33 @@ sns.set_style("whitegrid")
 # In[2]:
 
 
-# Load QC-normalized single-cell parquet files for both plates
+# Set if this run is for the HLHS plates (will be updated by papermill)
+hlhs_run = True
+
+
+# Optional CLI fallback for direct script-style execution.
+def _str_to_bool(value):
+    return str(value).strip().lower() in ("1", "true", "yes")
+
+
+parser = argparse.ArgumentParser(add_help=False)
+parser.add_argument(
+    "--hlhs-run", dest="hlhs_run", type=_str_to_bool, default=hlhs_run
+)
+args, _ = parser.parse_known_args(sys.argv[1:])
+hlhs_run = args.hlhs_run
+
+
+# In[3]:
+
+
+# Load QC-normalized single-cell parquet files for all plates in the run
 data_dir = (
     Path("..") / "3.preprocessing_profiles" / "data" / "single_cell_profiles"
 )  # notebook is in 4.EDA
+if hlhs_run:
+    # HLHS plates are in a subfolder of the default subtyping plates
+    data_dir = data_dir / "hlhs"
 sc_paths = sorted(data_dir.glob("*_sc_normalized.parquet"))
 
 if not sc_paths:
@@ -39,7 +66,7 @@ df = pd.concat(dfs, ignore_index=True)
 print(f"Loaded rows: {len(df)} (from {len(dfs)} file(s))")
 
 
-# In[3]:
+# In[4]:
 
 
 # Preferred columns
@@ -140,7 +167,10 @@ plt.tight_layout()
 # Save plot
 output_plot_dir = Path("figures")
 output_plot_dir.mkdir(parents=True, exist_ok=True)
-output_plot_path = output_plot_dir / "actin_intensity_healthy_vs_failing_by_plate.png"
+plot_suffix = "_hlhs" if hlhs_run else ""
+output_plot_path = (
+    output_plot_dir / f"actin_intensity_healthy_vs_failing_by_plate{plot_suffix}.png"
+)
 g.fig.savefig(output_plot_path, bbox_inches="tight", dpi=150)
 print("Plot saved to:", output_plot_path)
 
@@ -154,10 +184,4 @@ summary = (
 )
 print("\nSummary statistics (by plate and cell type):")
 print(summary)
-
-
-# In[ ]:
-
-
-
 

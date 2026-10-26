@@ -1,15 +1,21 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# # Split DMSO plate into data splits for three different models
+# # Split a selected plate into four data splits
 # 
-# 1. Healthy versus failing (IDC) hearts; whole plate
-# 2. Healthy versus failing (DCM subtype) hearts; filter plate
-# 3. Healthy versus failing (HCM subtype) hearts; filter plate
+# For the selected plate, we generate four splits:
+# 
+# 1. **Female heart holdout**: all single cells from the female hearts (#32 and #64)
+# 2. **Well holdout**: one random well per remaining heart number
+# 3. **Training**: 70% of the remaining single cells
+# 4. **Testing**: 30% of the remaining single cells
+# 
+# The training and testing splits are stratified by heart failure subtype (Healthy, DCM, and ICM) so that one class does not dominate either split when training a multi-class model to predict subtype.
 
 # In[1]:
 
 
+import os
 import pathlib
 import random
 
@@ -26,35 +32,35 @@ from sklearn.model_selection import train_test_split
 random_state = 0
 random.seed(random_state)
 
-# Set if training model on redo plate (true) or original (false)
-redo_plate = True
+# Set the plate to split and train with the PLATE_TO_TRAIN environment variable (defaults to the subtyping plate)
+plate_to_train = os.environ.get("PLATE_TO_TRAIN", "CARD-CelIns-CX7_260814100001")
+
+# Heart numbers from female patients to hold out entirely (only held out if they are on the plate)
+female_hearts = [32, 64]
+
+# Column with the heart failure subtype and the label to give healthy hearts (which are NaN)
+subtype_col = "Metadata_heart_failure_type"
+healthy_label = "Healthy"
+
+# Set the ratio of the test data to 30% (training data will be 70%)
+test_ratio = 0.30
 
 # Path to directory with feature selected profiles
 path_to_feature_selected_data = pathlib.Path(
     "../3.preprocessing_profiles/data/single_cell_profiles/"
 ).resolve(strict=True)
 
-if redo_plate:  # redo plate processing
-    # Find feature selected parquet file (QC applied)
-    feature_selected_path = pathlib.Path(
-        path_to_feature_selected_data
-        / "CARD-CelIns-CX7_251110170001_sc_feature_selected.parquet"
-    )
-    # Make directory for split data
-    output_dir = pathlib.Path("./data_splits/redo_DMSO_plate")
-    output_dir.mkdir(exist_ok=True)
-else:  # process original plate
-    # Find feature selected parquet file (QC applied)
-    feature_selected_path = pathlib.Path(
-        path_to_feature_selected_data
-        / "CARD-CelIns-CX7_251023130003_sc_feature_selected.parquet"
-    )
-    # Make directory for split data
-    output_dir = pathlib.Path("./data_splits/original_DMSO_plate")
-    output_dir.mkdir(exist_ok=True)
+# Find feature selected parquet file (QC applied) for the selected plate (can be in a subfolder, e.g. hlhs/)
+feature_selected_path = next(
+    path_to_feature_selected_data.rglob(f"{plate_to_train}_sc_feature_selected.parquet")
+)
 
-# Print out the files found
-print(f"Found feature selected file: {feature_selected_path.stem.split('_')[:2]}")
+# Make directory for split data (one folder per plate)
+output_dir = pathlib.Path(f"./data_splits/{plate_to_train}")
+output_dir.mkdir(parents=True, exist_ok=True)
+
+# Print out the file found
+print(f"Found feature selected file: {feature_selected_path.name}")
 
 
 # ## Load in feature selected data
@@ -65,277 +71,155 @@ print(f"Found feature selected file: {feature_selected_path.stem.split('_')[:2]}
 # Load the feature selected file as a DataFrame
 feature_selected_df = pd.read_parquet(feature_selected_path)
 
+# Confirm that only the selected plate is in the data
+assert feature_selected_df["Metadata_Plate"].nunique() == 1, (
+    "More than one plate found in the feature selected file"
+)
+
 print(f"Loaded file: {feature_selected_path.name}")
-print(f"Plate name: {feature_selected_path.stem.split('_')[0]}")
+print(f"Plate name: {plate_to_train}")
 print(f"Shape: {feature_selected_df.shape}")
 feature_selected_df.head()
 
 
-# ## Drop all rows from heart #47 (due to over-confluence)
+# ## Set the heart failure subtype label used for stratification
+# 
+# Healthy hearts do not have a heart failure type (NaN), so we label them as `Healthy` to stratify across all three classes (Healthy, DCM, and ICM).
+# This label is only used for stratifying and is not saved to the splits.
 
 # In[4]:
 
 
-# Drop rows from heart #47 (due to over-confluence)
-feature_selected_df = feature_selected_df[
-    feature_selected_df["Metadata_heart_number"] != 47
-]
-print(f"Shape after dropping Heart #47: {feature_selected_df.shape}")
+# Label healthy hearts (NaN heart failure type) to get the three subtype classes
+subtype_labels = feature_selected_df[subtype_col].fillna(healthy_label)
+
+# Print the hearts and number of single cells per subtype
+print(
+    feature_selected_df.assign(subtype=subtype_labels)
+    .groupby("subtype")
+    .agg(
+        hearts=("Metadata_heart_number", lambda x: sorted(x.unique())),
+        num_cells=("Metadata_heart_number", "size"),
+    )
+)
 
 
-# ## Perform splits for model #1 (healthy versus failing IDC)
+# ## Split #1: Hold out the female hearts
 # 
-# Holdout all of heart #2 (media) and one random well from each heart from the model.
+# Hold out all single cells from the female hearts (#32 and #64).
 
 # In[5]:
 
 
-# Set output directory for this model
-model_output_dir = output_dir / "model_all_hearts"
-model_output_dir.mkdir(parents=True, exist_ok=True)
+# Hold out all rows from the female hearts (heart numbers are compared as strings since some plates use letters)
+female_holdout_mask = (
+    feature_selected_df["Metadata_heart_number"].astype(str).isin(map(str, female_hearts))
+)
+female_holdout_df = feature_selected_df[female_holdout_mask].copy()
 
+# Save female heart holdout set (not made if the plate does not have the female hearts, e.g. the HLHS plate)
+if female_holdout_df.empty:
+    print(f"No female hearts {female_hearts} on {plate_to_train}, so no female heart holdout set is made")
+else:
+    female_holdout_df.to_parquet(output_dir / "holdout_female_hearts_split.parquet")
+
+print(f"Female heart holdout set shape: {female_holdout_df.shape}")
+print(female_holdout_df.groupby("Metadata_heart_number")["Metadata_Well"].nunique())
+
+
+# ## Split #2: Hold out one random well per heart
+# 
+# Randomly hold out one well from each of the remaining hearts.
 
 # In[6]:
 
 
-# Hold out all rows where treatment is None (only applies to heart 2)
-holdout_mask = feature_selected_df["Metadata_treatment"] == "None"
-
-# Randomly hold out one well per other heart (make sampling reproducible)
+# Randomly hold out one well per remaining heart (make sampling reproducible)
 random_wells = (
-    feature_selected_df[~holdout_mask]
+    feature_selected_df[~female_holdout_mask]
+    .drop_duplicates(subset=["Metadata_heart_number", "Metadata_Well"])
+    .sort_values(["Metadata_heart_number", "Metadata_Well"])
     .groupby("Metadata_heart_number")["Metadata_Well"]
-    .apply(lambda x: x.dropna().sample(1, random_state=random_state))
-    .explode()
+    .sample(1, random_state=random_state)
 )
 print(f"Randomly selected wells for holdout: {random_wells.tolist()}")
 
-# Combine with heart 2 / 'None' treatment rows
-holdout_idx = feature_selected_df[holdout_mask].index.union(
-    feature_selected_df.index[feature_selected_df["Metadata_Well"].isin(random_wells)]
+# Hold out all rows from the randomly selected wells
+well_holdout_mask = ~female_holdout_mask & feature_selected_df["Metadata_Well"].isin(
+    random_wells
 )
+well_holdout_df = feature_selected_df[well_holdout_mask].copy()
 
-# Create holdout and remaining dataframes
-holdout_df = feature_selected_df.loc[holdout_idx].copy()
-model_1_df = feature_selected_df.drop(holdout_idx).copy()
+# Save well holdout set
+well_holdout_df.to_parquet(output_dir / "holdout_well_split.parquet")
 
-# Save holdout set for model_1
-holdout_df.to_parquet(model_output_dir / "holdout_split.parquet")
+print(f"Well holdout set shape: {well_holdout_df.shape}")
+print(well_holdout_df.groupby("Metadata_heart_number")["Metadata_Well"].unique())
 
-print(f"Holdout set shape: {holdout_df.shape}")
 
+# ## Splits #3 and #4: Training and testing (70/30)
+# 
+# Split the remaining single cells into training and testing sets, stratified by heart failure subtype.
 
 # In[7]:
 
 
-print(f"Model 1 data shape (after dropping holdout rows): {model_1_df.shape}")
+# Remaining data after removing both holdout sets
+model_df = feature_selected_df[~female_holdout_mask & ~well_holdout_mask].copy()
+print(f"Data shape (after dropping holdout rows): {model_df.shape}")
 
-# Sanity check
-assert (
-    holdout_df.shape[0] + model_1_df.shape[0] == feature_selected_df.shape[0]
-), "Holdout + remaining does not equal original after splitting"
-
-# Set the ratio of the test data to 30% (training data will be 70%)
-test_ratio = 0.30
-
-# Split data into training and test sets
+# Split data into training and test sets stratified by subtype
 train_df, test_df = train_test_split(
-    model_1_df,
+    model_df,
     test_size=test_ratio,
-    stratify=model_1_df["Metadata_cell_type"],
+    stratify=subtype_labels.loc[model_df.index],
     random_state=random_state,
 )
 
 # Save training and test data
-train_df.to_parquet(model_output_dir / "training_split.parquet")
-test_df.to_parquet(model_output_dir / "testing_split.parquet")
+train_df.to_parquet(output_dir / "training_split.parquet")
+test_df.to_parquet(output_dir / "testing_split.parquet")
 
 print(f"Training data shape: {train_df.shape}")
 print(f"Testing data shape: {test_df.shape}")
 
-# Print out the number of samples per cell type in each split
-print("\nCell type distribution in training set:")
-print(train_df["Metadata_cell_type"].value_counts(normalize=True))
 
-
-# ## Perform splits for model #2 (healthy versus failing DCM subtype)
-# 
-# Filter for only healthy and failing hearts from DCM patients. Holdout all of heart #2 (media) and one random well from each heart from the model.
+# ## Check the splits
 
 # In[8]:
 
 
-# Set output directory for this model
-model_output_dir = output_dir / "model_DCM"
-model_output_dir.mkdir(parents=True, exist_ok=True)
+splits = {
+    **({"holdout_female_hearts": female_holdout_df} if not female_holdout_df.empty else {}),
+    "holdout_well": well_holdout_df,
+    "training": train_df,
+    "testing": test_df,
+}
 
-
-# In[9]:
-
-
-# Filter the feature_selected_df for healthy hearts and failing hearts with DCM
-filtered_df = feature_selected_df[
-    (feature_selected_df["Metadata_cell_type"] == "Healthy")
-    | (
-        (feature_selected_df["Metadata_cell_type"] == "Failing")
-        & (feature_selected_df["Metadata_heart_failure_type"] == "DCM")
-    )
-].copy()
-
-print(f"Filtered DataFrame shape (Healthy + Failing DCM): {filtered_df.shape}")
-print(
-    "Unique heart numbers in filtered DataFrame:",
-    filtered_df["Metadata_heart_number"].unique(),
-)
-filtered_df.head()
-
-
-# In[10]:
-
-
-# Hold out all rows where treatment is None (only applies to heart 2)
-holdout_mask = filtered_df["Metadata_treatment"] == "None"
-
-# Randomly hold out one well per other heart (make sampling reproducible)
-random_wells = (
-    filtered_df[~holdout_mask]
-    .groupby("Metadata_heart_number")["Metadata_Well"]
-    .apply(lambda x: x.dropna().sample(1, random_state=random_state))
-    .explode()
-)
-print(f"Randomly selected wells for holdout: {random_wells.tolist()}")
-
-# Combine with heart 2 / 'None' treatment rows
-holdout_idx = filtered_df[holdout_mask].index.union(
-    filtered_df.index[filtered_df["Metadata_Well"].isin(random_wells)]
-)
-
-# Create holdout and remaining dataframes
-holdout_df = filtered_df.loc[holdout_idx].copy()
-model_2_df = filtered_df.drop(holdout_idx).copy()
-
-# Save holdout set for model_2
-holdout_df.to_parquet(model_output_dir / "holdout_split.parquet")
-
-print(f"Holdout set shape: {holdout_df.shape}")
-
-
-# In[11]:
-
-
-print(f"Model 1 data shape (after dropping holdout rows): {model_2_df.shape}")
-
-# Sanity check
+# Sanity check that every single cell is in exactly one split
+all_split_idx = pd.concat(splits.values()).index
+assert all_split_idx.is_unique, "Single cells found in more than one split"
 assert (
-    holdout_df.shape[0] + model_2_df.shape[0] == filtered_df.shape[0]
-), "Holdout + remaining does not equal original after splitting"
+    len(all_split_idx) == feature_selected_df.shape[0]
+), "Splits do not add up to the original data"
 
-# Set the ratio of the test data to 30% (training data will be 70%)
-test_ratio = 0.30
+# Sanity check that the female hearts and holdout wells are not in training or testing
+for split_name in ["training", "testing"]:
+    split_df = splits[split_name]
+    assert not split_df.index.isin(female_holdout_df.index).any()
+    assert not split_df["Metadata_Well"].isin(random_wells).any()
 
-# Split data into training and test sets
-train_df, test_df = train_test_split(
-    model_2_df,
-    test_size=test_ratio,
-    stratify=model_2_df["Metadata_cell_type"],
-    random_state=random_state,
-)
+# Number of single cells per subtype in each split
+subtype_counts = pd.DataFrame(
+    {
+        split_name: subtype_labels.loc[split_df.index].value_counts()
+        for split_name, split_df in splits.items()
+    }
+).fillna(0).astype(int)
+print("Number of single cells per subtype in each split:")
+print(subtype_counts)
 
-# Save training and test data
-train_df.to_parquet(model_output_dir / "training_split.parquet")
-test_df.to_parquet(model_output_dir / "testing_split.parquet")
-
-print(f"Training data shape: {train_df.shape}")
-print(f"Testing data shape: {test_df.shape}")
-
-
-# ## Perform splits for model #3 (healthy versus failing HCM subtype)
-# 
-# Filter for only healthy and failing hearts from HCM patients. Holdout all of heart #2 (media) and one random well from each heart from the model.
-
-# In[12]:
-
-
-# Set output directory for this model
-model_output_dir = output_dir / "model_HCM"
-model_output_dir.mkdir(parents=True, exist_ok=True)
-
-
-# In[13]:
-
-
-# Filter the feature_selected_df for healthy hearts and failing hearts with HCM
-filtered_df = feature_selected_df[
-    (feature_selected_df["Metadata_cell_type"] == "Healthy")
-    | (
-        (feature_selected_df["Metadata_cell_type"] == "Failing")
-        & (feature_selected_df["Metadata_heart_failure_type"] == "HCM")
-    )
-].copy()
-
-print(f"Filtered DataFrame shape (Healthy + Failing HCM): {filtered_df.shape}")
-print(
-    "Unique heart numbers in filtered DataFrame:",
-    filtered_df["Metadata_heart_number"].unique(),
-)
-filtered_df.head()
-
-
-# In[14]:
-
-
-# Hold out all rows where treatment is None (only applies to heart 2)
-holdout_mask = filtered_df["Metadata_treatment"] == "None"
-
-# Randomly hold out one well per other heart (make sampling reproducible)
-random_wells = (
-    filtered_df[~holdout_mask]
-    .groupby("Metadata_heart_number")["Metadata_Well"]
-    .apply(lambda x: x.dropna().sample(1, random_state=random_state))
-    .explode()
-)
-print(f"Randomly selected wells for holdout: {random_wells.tolist()}")
-
-# Combine with heart 2 / 'None' treatment rows
-holdout_idx = filtered_df[holdout_mask].index.union(
-    filtered_df.index[filtered_df["Metadata_Well"].isin(random_wells)]
-)
-
-# Create holdout and remaining dataframes
-holdout_df = filtered_df.loc[holdout_idx].copy()
-model_3_df = filtered_df.drop(holdout_idx).copy()
-
-# Save holdout set for model_3
-holdout_df.to_parquet(model_output_dir / "holdout_split.parquet")
-
-print(f"Holdout set shape: {holdout_df.shape}")
-
-
-# In[15]:
-
-
-print(f"Model 1 data shape (after dropping holdout rows): {model_3_df.shape}")
-
-# Sanity check
-assert (
-    holdout_df.shape[0] + model_3_df.shape[0] == filtered_df.shape[0]
-), "Holdout + remaining does not equal original after splitting"
-
-# Set the ratio of the test data to 30% (training data will be 70%)
-test_ratio = 0.30
-
-# Split data into training and test sets
-train_df, test_df = train_test_split(
-    model_3_df,
-    test_size=test_ratio,
-    stratify=model_3_df["Metadata_cell_type"],
-    random_state=random_state,
-)
-
-# Save training and test data
-train_df.to_parquet(model_output_dir / "training_split.parquet")
-test_df.to_parquet(model_output_dir / "testing_split.parquet")
-
-print(f"Training data shape: {train_df.shape}")
-print(f"Testing data shape: {test_df.shape}")
+# Proportion of each subtype within each split
+print("\nProportion of each subtype in each split:")
+print((subtype_counts / subtype_counts.sum()).round(3))
 

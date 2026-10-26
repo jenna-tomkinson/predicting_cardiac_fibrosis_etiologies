@@ -13,6 +13,7 @@ python nbconverted/0.check_actin_intensity.py
 python nbconverted/1.UMAP.py
 python nbconverted/2.cell_count_check.py
 python nbconverted/4.correlation_heatmaps.py
+python nbconverted/5.well_correlation_vs_qc.py
 
 # deactivate the conda environment
 conda deactivate

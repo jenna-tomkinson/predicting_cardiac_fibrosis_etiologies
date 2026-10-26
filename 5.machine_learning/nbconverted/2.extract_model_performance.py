@@ -13,6 +13,7 @@
 # In[1]:
 
 
+import os
 import pathlib
 import sys
 
@@ -26,7 +27,7 @@ sys.path.append("../utils")
 from training_utils import get_X_y_data
 
 
-# ## Helper function to collect precision-recall results and predicted probabilities for binary models only
+# ## Helper functions
 
 # In[2]:
 
@@ -134,10 +135,11 @@ def get_predicted_probabilities(
         ), "Features in the model do not match the columns in the dataset"
 
         # Encode labels and ensure binary problem (this helper is for binary models only)
+        # NOTE: A data split can have only one of the two classes (e.g., female heart holdout)
         y_encoded = label_encoder.transform(y)
         unique_labels = set(y_encoded)
         assert (
-            len(unique_labels) == 2
+            len(unique_labels) <= 2
         ), f"Expected binary labels after encoding, got classes: {sorted(list(unique_labels))}"
 
         # Ensure model supports predict_proba and returns expected shape
@@ -188,40 +190,95 @@ def get_predicted_probabilities(
         ) from e
 
 
-# # Set paths
-
 # In[4]:
 
 
-# Set plate to process (original or redo)
-plate_to_process = "redo"  # options: "original" or "redo"
+def get_model_datasets(
+    model_name: str,
+    training_data_path: pathlib.Path,
+    eval_dfs: dict[str, pd.DataFrame],
+    label: str,
+    subtype_col: str,
+    healthy_label: str,
+) -> dict[str, pd.DataFrame]:
+    """Get the data splits to apply to a binary model.
 
-# Directory with the training and testing datasets per plate (or combined per batch)
-data_dir = pathlib.Path(f"data_splits/{plate_to_process}_DMSO_plate")
+    Args:
+        model_name (str): name of the model (e.g., model_all_hearts or model_DCM)
+        training_data_path (pathlib.Path): path to the (downsampled) training data for the model
+        eval_dfs (dict[str, pd.DataFrame]): testing and holdout data splits for all hearts
+        label (str): label with the class being predicted
+        subtype_col (str): column with the heart failure subtype
+        healthy_label (str): label for the healthy hearts in the label column
 
-# Directory with the trained models
-model_dir = pathlib.Path(f"models/{plate_to_process}_DMSO_plate")
+    Returns:
+        dict[str, pd.DataFrame]: dictionary with the dataframe per data split
+    """
+    datasets = {"train": pd.read_parquet(training_data_path)}
 
-# Directory with encoder
-encoder_dir = pathlib.Path(f"encoder_results/{plate_to_process}_DMSO_plate")
+    # Subtype models only use healthy hearts and failing hearts from that subtype
+    subtype = model_name.replace("model_", "")
+    for split_name, split_df in eval_dfs.items():
+        if subtype != "all_hearts":
+            split_df = split_df[
+                (split_df[label] == healthy_label) | (split_df[subtype_col] == subtype)
+            ]
+        datasets[split_name] = split_df
 
-# Output directory the performance metrics
-performance_metrics_dir = pathlib.Path(
-    f"performance_metrics/{plate_to_process}_DMSO_plate"
-)
-performance_metrics_dir.mkdir(exist_ok=True)
-
-# Label being predicted
-label = "Metadata_cell_type"
+    return datasets
 
 
-# ## Create dictionary with all relevant paths per plate to extract metrics
+# # Set paths
 
 # In[5]:
 
 
+# Set the plate to process with the PLATE_TO_TRAIN environment variable (defaults to the subtyping plate)
+plate_to_process = os.environ.get("PLATE_TO_TRAIN", "CARD-CelIns-CX7_260814100001")
+
+# Directory with the training, testing, and holdout datasets for the plate
+data_dir = pathlib.Path(f"data_splits/{plate_to_process}").resolve(strict=True)
+
+# Directory with the trained models
+model_dir = pathlib.Path(f"models/{plate_to_process}").resolve(strict=True)
+
+# Directory with encoder
+encoder_dir = pathlib.Path(f"encoder_results/{plate_to_process}").resolve(strict=True)
+
+# Output directory the performance metrics
+performance_metrics_dir = pathlib.Path(f"performance_metrics/{plate_to_process}")
+performance_metrics_dir.mkdir(exist_ok=True, parents=True)
+
+# Label being predicted
+label = "Metadata_cell_type"
+
+# Column with the heart failure subtype and the label to give healthy hearts (which are NaN)
+subtype_col = "Metadata_heart_failure_type"
+healthy_label = "Healthy"
+
+# Paths to the data splits not used for training (shared across all models)
+eval_split_paths = {
+    "test": pathlib.Path(data_dir / "testing_split.parquet").resolve(strict=True),
+    "holdout_well": pathlib.Path(data_dir / "holdout_well_split.parquet").resolve(
+        strict=True
+    ),
+}
+
+# Female heart holdout is only made when the plate has the female hearts
+if (data_dir / "holdout_female_hearts_split.parquet").exists():
+    eval_split_paths["holdout_female_hearts"] = data_dir / "holdout_female_hearts_split.parquet"
+
+
+# ## Create dictionary with all relevant paths per model to extract metrics
+# 
+# The testing and holdout splits are shared across all models.
+# For the subtype binary models, these splits are filtered to the healthy hearts and the failing hearts from that subtype (same as the training data).
+
+# In[6]:
+
+
 # Extract model names from model filenames
-model_names = set(
+model_names = sorted(
     f.stem.replace("_final_downsample", "")
     for f in model_dir.glob("*_final_downsample.joblib")
 )
@@ -232,12 +289,6 @@ for model in model_names:
     models_dict[model] = {
         "training_data": pathlib.Path(
             data_dir / model / "downsample_training_split.parquet"
-        ).resolve(strict=True),
-        "testing_data": pathlib.Path(
-            data_dir / model / "testing_split.parquet"
-        ).resolve(strict=True),
-        "holdout_data": pathlib.Path(
-            data_dir / model / "holdout_split.parquet"
         ).resolve(strict=True),
         "final_model": pathlib.Path(
             model_dir / f"{model}_final_downsample.joblib"
@@ -255,107 +306,55 @@ for model, paths in models_dict.items():
     lines = [f"Model: {model}"] + [f"  {key}: {path}" for key, path in paths.items()]
     print("\n".join(lines))
 
-
-# In[6]:
-
-
-# For each model, print unique Metadata_heart_number per data split
-for model_name, paths in models_dict.items():
-    # load datasets
-    downsample_train_df = pd.read_parquet(paths["training_data"])
-    test_df = pd.read_parquet(paths["testing_data"])
-    holdout_df = pd.read_parquet(paths["holdout_data"])
-
-    # collect unique heart numbers per split and print
-    print(f"Model: {model_name}")
-    for split_name, df in [
-        ("train", downsample_train_df),
-        ("test", test_df),
-        ("holdout", holdout_df),
-    ]:
-        if "Metadata_heart_number" not in df.columns:
-            print(f"  {split_name}: Metadata_heart_number column not found")
-            continue
-        unique_hearts = pd.Series(df["Metadata_heart_number"].dropna().unique())
-        # Print unique heart numbers horizontally, sorted and compact
-        hearts = sorted(unique_hearts.tolist())
-        if len(hearts) == 0:
-            print(f"  {split_name} (0): None")
-        else:
-            hearts_str = ", ".join(str(h) for h in hearts)
-            print(f"  {split_name} ({len(hearts)}): {hearts_str}")
+# Load in the testing and holdout splits
+eval_dfs = {
+    split_name: pd.read_parquet(split_path)
+    for split_name, split_path in eval_split_paths.items()
+}
 
 
 # In[7]:
 
 
-# Find the model key that corresponds to the "all hearts" model
-model_key = next(
-    (k for k in models_dict.keys() if "all" in k.lower() and "heart" in k.lower()),
-    None,
-)
-
-if model_key is None:
-    raise KeyError(
-        f"No model key matching 'all' and 'heart' found. Available keys: {list(models_dict.keys())}"
+# For each model, print unique Metadata_heart_number and class counts per data split
+for model_name in models_dict:
+    print(f"Model: {model_name}")
+    datasets = get_model_datasets(
+        model_name=model_name,
+        training_data_path=models_dict[model_name]["training_data"],
+        eval_dfs=eval_dfs,
+        label=label,
+        subtype_col=subtype_col,
+        healthy_label=healthy_label,
     )
+    for split_name, df in datasets.items():
+        # Print unique heart numbers horizontally, sorted and compact
+        hearts = sorted(df["Metadata_heart_number"].dropna().unique().tolist())
+        hearts_str = ", ".join(str(h) for h in hearts)
+        print(
+            f"  {split_name} ({len(hearts)}): {hearts_str} | {df[label].value_counts().to_dict()}"
+        )
 
-# Load holdout dataset for that model
-holdout_path = models_dict[model_key]["holdout_data"]
-holdout_df = pd.read_parquet(holdout_path)
 
-# Filter to DMSO treatment only and drop rows missing required columns
-dmso_holdout = holdout_df.loc[
-    (holdout_df["Metadata_treatment"] == "DMSO")
-    & holdout_df["Metadata_heart_number"].notna()
-    & holdout_df["Metadata_Well"].notna()
-].copy()
+# In[8]:
 
-# Compute number of rows/cells per (heart, well)
+
+# Compute number of single cells per held-out well for each heart
 cells_per_well = (
-    dmso_holdout.groupby(["Metadata_heart_number", "Metadata_Well"])
+    eval_dfs["holdout_well"]
+    .groupby(["Metadata_heart_number", "Metadata_Well"])
     .size()
     .reset_index(name="n_cells")
 )
 
-# For each heart, collect sorted list of wells and corresponding counts
-wells_per_heart = (
-    cells_per_well.sort_values(["Metadata_heart_number", "Metadata_Well"])
-    .groupby("Metadata_heart_number")
-    .agg(
-        heldout_wells=("Metadata_Well", lambda s: sorted(list(s))),
-        cells_per_well_list=("n_cells", lambda s: list(s)),
-        wells_with_counts=(
-            "n_cells",
-            lambda s, idx=None: None,
-        ),  # placeholder column removed below
-    )
-    .reset_index()
-)
-
-# Replace wells_with_counts with a mapping from well -> count for clarity
-wells_per_heart = wells_per_heart.drop(columns=["wells_with_counts"])
-wells_per_heart["well_cell_counts"] = wells_per_heart["Metadata_heart_number"].map(
-    lambda h: dict(
-        cells_per_well.loc[
-            cells_per_well["Metadata_heart_number"] == h, ["Metadata_Well", "n_cells"]
-        ]
-        .set_index("Metadata_Well")["n_cells"]
-        .to_dict()
-    )
-)
-
 # Print results
-print(f"Model key: {model_key}")
-print(
-    "Held-out Metadata_Well values and cell counts per Metadata_heart_number for DMSO treatment:"
-)
-print(wells_per_heart.to_string(index=False))
+print("Held-out Metadata_Well and cell count per Metadata_heart_number:")
+print(cells_per_well.to_string(index=False))
 
 
 # ## Extract metrics from the data splits applied to their respective models
 
-# In[8]:
+# In[9]:
 
 
 # Initialize results list
@@ -368,14 +367,18 @@ for model_name, paths in models_dict.items():
     final_model = load(paths["final_model"])
     shuffled_model = load(paths["shuffled_model"])
     label_encoder = load(paths["encoder_result"])
-    downsample_train_df = pd.read_parquet(paths["training_data"])
-    test_df = pd.read_parquet(paths["testing_data"])
-    holdout_df = pd.read_parquet(paths["holdout_data"])
 
     print(f"Processing model: {model_name}")
 
     # Set dictionary with the data splits
-    datasets = {"train": downsample_train_df, "test": test_df, "holdout": holdout_df}
+    datasets = get_model_datasets(
+        model_name=model_name,
+        training_data_path=models_dict[model_name]["training_data"],
+        eval_dfs=eval_dfs,
+        label=label,
+        subtype_col=subtype_col,
+        healthy_label=healthy_label,
+    )
 
     # Loop through both datasets and models
     for dataset_name, dataset in datasets.items():
@@ -389,6 +392,13 @@ for model_name, paths in models_dict.items():
             prob_df["model_name"] = model_name
             test_train_probability_results.append(prob_df)
 
+            # PR curve can not be computed when the data split only has one class
+            if dataset[label].nunique() < 2:
+                print(
+                    f"{model_name} | {model_type} | {dataset_name} → Done (no PR curve, only one class)"
+                )
+                continue
+
             # Get PR curve results (global)
             pr_df = get_pr_curve_results(
                 model=model, df=dataset, label=label, label_encoder=label_encoder
@@ -398,9 +408,7 @@ for model_name, paths in models_dict.items():
             pr_df["model_name"] = model_name
             test_train_pr_results.append(pr_df)
 
-            print(
-                f"{model_name.upper()} | {model_name} | {model_type} | {dataset_name} → Done"
-            )
+            print(f"{model_name} | {model_type} | {dataset_name} → Done")
 
 # Combine all results into one dataframe
 all_models_pr_results_df = pd.concat(test_train_pr_results, ignore_index=True)
@@ -423,7 +431,7 @@ all_models_pr_results_df.head(2)
 
 # ## Extract performance from the multi-class model only
 
-# In[9]:
+# In[10]:
 
 
 # Load in final and shuffled model for multi-class models
@@ -432,21 +440,14 @@ shuffled_model = load(
     pathlib.Path(model_dir / "model_all_hearts_shuffled_multiclass.joblib")
 )
 
-# Set paths to data splits
-training_data_path = pathlib.Path(
-    data_dir
-    / "model_all_hearts"
-    / "training_split.parquet"  # Did not downsample for the multi-class model
-).resolve(strict=True)
-testing_data_path = pathlib.Path(
-    data_dir / "model_all_hearts" / "testing_split.parquet"
-).resolve(strict=True)
-holdout_data_path = pathlib.Path(
-    data_dir / "model_all_hearts" / "holdout_split.parquet"
-).resolve(strict=True)
+# Set paths to data splits (did not downsample training data for the multi-class model)
+multi_class_split_paths = {
+    "train": pathlib.Path(data_dir / "training_split.parquet").resolve(strict=True),
+    **eval_split_paths,
+}
 
 
-# In[10]:
+# In[11]:
 
 
 # Initialize results list
@@ -457,17 +458,21 @@ cell_probs_results = []
 # Load in label encoder for multi-class model
 label_encoder = load(pathlib.Path(encoder_dir / "label_encoder_multi-class.joblib"))
 
+# Save the mapping from the encoded class to the class name (used for plotting in R)
+pd.DataFrame(
+    {
+        "encoded_label": label_encoder.transform(label_encoder.classes_),
+        "class_label": label_encoder.classes_,
+    }
+).to_csv(performance_metrics_dir / "multi_class_label_mapping.csv", index=False)
+
 # Set updated label variable
 label = "Metadata_heart_failure_type"
 
-for dataset_name, data_path in [
-    ("train", training_data_path),
-    ("test", testing_data_path),
-    ("holdout", holdout_data_path),
-]:
+for dataset_name, data_path in multi_class_split_paths.items():
     # Load dataset
     df = pd.read_parquet(data_path)
-    df[label] = df[label].fillna("Healthy")
+    df[label] = df[label].fillna(healthy_label)
 
     # Get X and y for the model
     X, y = get_X_y_data(df=df, label=label, shuffle_features=False)
@@ -500,6 +505,13 @@ for dataset_name, data_path in [
             y_true_binary = (y_encoded == class_index).astype(int)
             y_scores = y_pred_proba[:, class_index]
 
+            # PR curve is not informative when the data split only has one class
+            if y_true_binary.min() == y_true_binary.max():
+                print(
+                    f"model_all_hearts_multiclass | {model_type} | {dataset_name} | {class_label} → Skipped PR curve (only one class in split)"
+                )
+                continue
+
             precision, recall, _ = precision_recall_curve(y_true_binary, y_scores)
 
             pr_df = pd.DataFrame(
@@ -515,28 +527,28 @@ for dataset_name, data_path in [
 
             multi_class_pr_results.append(pr_df)
 
-            # --- Compute per-heart × treatment accuracy ---
-            for (heart, treatment), group_df in df.groupby(
-                ["Metadata_heart_number", "Metadata_treatment"]
-            ):
-                mask = X.index.isin(group_df.index)
-                if not mask.any():
-                    continue
-
-                heart_treatment_acc = (y_pred_label[mask] == y_encoded[mask]).mean()
-                heart_accuracy_results.append(
-                    {
-                        "dataset": dataset_name,
-                        "model_type": model_type,
-                        "model_name": "model_all_hearts_multiclass",
-                        "heart_number": heart,
-                        "treatment": treatment,
-                        "accuracy": heart_treatment_acc,
-                    }
-                )
-
             print(
                 f"model_all_hearts_multiclass | {model_type} | {dataset_name} | {class_label} → Done"
+            )
+
+        # --- Compute per-heart × treatment accuracy ---
+        for (heart, treatment), group_df in df.groupby(
+            ["Metadata_heart_number", "Metadata_treatment"]
+        ):
+            mask = X.index.isin(group_df.index)
+            if not mask.any():
+                continue
+
+            heart_treatment_acc = (y_pred_label[mask] == y_encoded[mask]).mean()
+            heart_accuracy_results.append(
+                {
+                    "dataset": dataset_name,
+                    "model_type": model_type,
+                    "model_name": "model_all_hearts_multiclass",
+                    "heart_number": heart,
+                    "treatment": treatment,
+                    "accuracy": heart_treatment_acc,
+                }
             )
 
 # Save PR results

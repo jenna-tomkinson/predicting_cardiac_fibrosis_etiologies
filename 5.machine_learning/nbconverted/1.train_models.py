@@ -1,11 +1,19 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# # Train three models with subsequent shuffled baselines
+# # Train binary and multi-class models with subsequent shuffled baselines
+# 
+# Using the training split from the selected plate, we train:
+# 
+# 1. **Binary models** (healthy versus failing): all hearts together and one model per failing subtype (healthy versus that subtype only). Training data are downsampled to the smallest class.
+# 2. **Multi-class model**: predicts heart failure subtype across all hearts. Training data are not downsampled.
+# 
+# Each model is trained with a shuffled baseline.
 
 # In[1]:
 
 
+import os
 import pathlib
 import sys
 import warnings
@@ -16,12 +24,28 @@ from joblib import dump
 from sklearn.base import clone
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold
+from sklearn.model_selection import RandomizedSearchCV
 from sklearn.preprocessing import LabelEncoder
 from sklearn.utils import parallel_backend
 
 sys.path.append("../utils")
-from training_utils import downsample_data, get_X_y_data
+from training_utils import downsample_data, get_heart_grouped_folds, get_X_y_data
+
+
+# ## Helper functions
+
+# In[ ]:
+
+
+def print_convergence(model: LogisticRegression) -> None:
+    """Print if the final (refit) model converged before reaching the max number of iterations.
+
+    Args:
+        model (LogisticRegression): best estimator from the random search
+    """
+    n_iter = int(model.n_iter_.max())
+    status = "converged" if n_iter < model.max_iter else "DID NOT CONVERGE"
+    print(f"Final fit {status}: {n_iter} of {model.max_iter} max iterations")
 
 
 # In[2]:
@@ -30,55 +54,74 @@ from training_utils import downsample_data, get_X_y_data
 # Set numpy seed for reproducibility
 np.random.seed(0)
 
-# Set if processing redo plate (true) or original plate (false)
-redo_plate = True
+# Set the plate to train with the PLATE_TO_TRAIN environment variable (defaults to the subtyping plate)
+plate_to_train = os.environ.get("PLATE_TO_TRAIN", "CARD-CelIns-CX7_260814100001")
 
 # Metadata column used for prediction class
 label = "Metadata_cell_type"
 
-if redo_plate:
-    # Path to training/testing datasets for redo plate
-    training_data_path = pathlib.Path("./data_splits/redo_DMSO_plate")
-    # Directories for outputs
-    model_dir = pathlib.Path("./models/redo_DMSO_plate")
-    model_dir.mkdir(exist_ok=True, parents=True)
+# Column with the heart failure subtype and the label to give healthy hearts (which are NaN)
+subtype_col = "Metadata_heart_failure_type"
+healthy_label = "Healthy"
 
-    encoder_dir = pathlib.Path("./encoder_results/redo_DMSO_plate")
-    encoder_dir.mkdir(exist_ok=True, parents=True)
-else:  # process original plate
-    # Path to training/testing datasets for original plate
-    training_data_path = pathlib.Path("./data_splits/original_DMSO_plate")
-    # Directories for outputs
-    model_dir = pathlib.Path("./models/original_DMSO_plate")
-    model_dir.mkdir(exist_ok=True, parents=True)
+# Metadata column with the heart each single cell comes from (used to group the cross validation folds)
+group_col = "Metadata_heart_number"
 
-    encoder_dir = pathlib.Path("./encoder_results/original_DMSO_plate")
-    encoder_dir.mkdir(exist_ok=True, parents=True)
+# Number of cross validation folds (there are only 3 hearts for each failing subtype)
+n_folds = 3
 
-# Find all training datasets
-training_files = list(training_data_path.rglob("training_split.parquet"))
+# Path to training/testing datasets for the selected plate
+training_data_path = pathlib.Path(f"./data_splits/{plate_to_train}").resolve(
+    strict=True
+)
 
-print(f"Found {len(training_files)} training datasets.")
+# Directories for outputs (one folder per plate)
+model_dir = pathlib.Path(f"./models/{plate_to_train}")
+model_dir.mkdir(exist_ok=True, parents=True)
 
-# Dictionary to store loaded training datasets
-training_dfs = {}
+encoder_dir = pathlib.Path(f"./encoder_results/{plate_to_train}")
+encoder_dir.mkdir(exist_ok=True, parents=True)
 
-# Loop through and load each training dataset
-for training_file in training_files:
-    dataset_name = training_file.parent.name  # Use parent folder name as key
-    print(f"Loading dataset: {dataset_name}")  # only print the model/folder name
+# Load in the training split for the selected plate
+train_df = pd.read_parquet(training_data_path / "training_split.parquet")
 
-    train_df = pd.read_parquet(training_file)
-    training_dfs[dataset_name] = train_df
+print(f"Plate name: {plate_to_train}")
+print(f"Training data shape: {train_df.shape}")
 
+
+# ## Set the training dataset for each binary model
+# 
+# All binary models predict healthy versus failing.
+# The `model_all_hearts` dataset uses the whole training split and each subtype dataset is filtered to the healthy hearts and the failing hearts from that subtype.
 
 # In[3]:
 
 
-# Loop through and downsample each loaded training dataset
-for dataset_name, train_df in training_dfs.items():
+# Failing subtypes in the training data (healthy hearts do not have a subtype)
+failing_subtypes = sorted(train_df[subtype_col].dropna().unique())
+
+# Dictionary to store the training dataset for each binary model
+training_dfs = {"model_all_hearts": train_df}
+
+# Filter for only healthy hearts and failing hearts from each subtype
+for subtype in failing_subtypes:
+    training_dfs[f"model_{subtype}"] = train_df[
+        (train_df[label] == healthy_label) | (train_df[subtype_col] == subtype)
+    ].copy()
+
+# Print the number of single cells per class before downsampling
+for dataset_name, dataset_df in training_dfs.items():
+    print(f"Dataset: {dataset_name} {dataset_df.shape}")
+    print(dataset_df[label].value_counts(), "\n")
+
+
+# In[4]:
+
+
+# Loop through and downsample each training dataset
+for dataset_name, dataset_df in training_dfs.items():
     # Downsample to the smallest class
-    downsample_df = downsample_data(data=train_df, label=label)
+    downsample_df = downsample_data(data=dataset_df, label=label)
 
     # Replace and store the downsampled dataframe
     training_dfs[dataset_name] = downsample_df
@@ -87,6 +130,7 @@ for dataset_name, train_df in training_dfs.items():
     output_file = (
         training_data_path / dataset_name / "downsample_training_split.parquet"
     )
+    output_file.parent.mkdir(exist_ok=True, parents=True)
     downsample_df.to_parquet(output_file, index=False)
 
     print(f"Parquet file created at {output_file} with {downsample_df.shape[0]} rows.")
@@ -94,13 +138,13 @@ for dataset_name, train_df in training_dfs.items():
     print(downsample_df[label].value_counts())
 
 
-# In[4]:
+# In[5]:
 
 
 # Collect all unique labels across all datasets
 all_labels = set()
-for dataset_name, train_df in training_dfs.items():
-    all_labels.update(train_df[label].unique())
+for dataset_name, dataset_df in training_dfs.items():
+    all_labels.update(dataset_df[label].unique())
 
 # Fit the LabelEncoder on the combined set of all labels
 le = LabelEncoder()
@@ -118,37 +162,46 @@ print(class_mapping)
 training_data = {}
 
 # Process each dataset to get X and y
-for dataset_name, train_df in training_dfs.items():
+for dataset_name, dataset_df in training_dfs.items():
     # Non-shuffled data
-    X_train, y_train = get_X_y_data(df=train_df, label=label, shuffle_features=False)
+    X_train, y_train = get_X_y_data(df=dataset_df, label=label, shuffle_features=False)
     y_train_encoded = le.transform(y_train)
 
     # Shuffled data
     X_shuffled_train, y_shuffled_train = get_X_y_data(
-        df=train_df, label=label, shuffle_features=True
+        df=dataset_df, label=label, shuffle_features=True
     )
     y_shuffled_train_encoded = le.transform(y_shuffled_train)
 
-    # Store X and y in the dictionary
+    # Store X, y, and the cross validation folds (grouped by heart) in the dictionary
     training_data[dataset_name] = {
         "X_train": X_train,
         "y_train": y_train_encoded,
         "X_shuffled_train": X_shuffled_train,
         "y_shuffled_train": y_shuffled_train_encoded,
+        "cv_folds": get_heart_grouped_folds(
+            df=dataset_df, group_col=group_col, strata_col=subtype_col, n_splits=n_folds
+        ),
     }
 
+    # Print the hearts in the validation data of each fold
+    for fold, (_, val_idx) in enumerate(training_data[dataset_name]["cv_folds"]):
+        val_hearts = sorted(dataset_df[group_col].iloc[val_idx].unique())
+        print(f"{dataset_name} | fold {fold} validation hearts: {val_hearts}")
 
-# In[5]:
+
+# In[6]:
 
 
-# Set folds for k-fold cross validation (default is 5, shuffle=True)
-straified_k_folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=0)
+# NOTE: Cross validation folds are grouped by heart (set per dataset above), so that all single
+# cells from a heart are in the same fold and hyperparameters are selected for performance on
+# hearts not trained on. Each fold holds out at least one heart per subtype.
 
-# Set Logistic Regression model parameters (use default for max_iter)
+# Set Logistic Regression model parameters
 logreg_params = {
     "penalty": "elasticnet",
     "solver": "saga",
-    "max_iter": 1000,
+    "max_iter": 5000,
     "n_jobs": -1,
     "random_state": 0,
     "class_weight": "balanced",
@@ -166,18 +219,16 @@ random_search_params = {
     "scoring": "f1_weighted",
     "random_state": 0,
     "n_jobs": -1,
-    "cv": straified_k_folds,
 }
 
 
 # ## Train binary logistic regressions
 
-# In[6]:
+# In[7]:
 
 
 # Initialize Logistic Regression and RandomizedSearchCV
 logreg = LogisticRegression(**logreg_params)
-random_search = RandomizedSearchCV(logreg, **random_search_params)
 
 # Loop through the training data dictionary
 for dataset_name, data_dict in training_data.items():
@@ -185,6 +236,11 @@ for dataset_name, data_dict in training_data.items():
     y_train = data_dict["y_train"]
     X_shuffled_train = data_dict["X_shuffled_train"]
     y_shuffled_train = data_dict["y_shuffled_train"]
+
+    # Set the random search with the folds grouped by heart for this dataset
+    random_search = RandomizedSearchCV(
+        logreg, cv=data_dict["cv_folds"], **random_search_params
+    )
 
     with parallel_backend("multiprocessing"):
         with warnings.catch_warnings():
@@ -202,6 +258,7 @@ for dataset_name, data_dict in training_data.items():
                 f"Optimal parameters for {dataset_name} (final):",
                 final_random_search.best_params_,
             )
+            print_convergence(final_random_search.best_estimator_)
 
             # Save model
             final_model_filename = model_dir / f"{dataset_name}_final_downsample.joblib"
@@ -218,6 +275,7 @@ for dataset_name, data_dict in training_data.items():
                 f"Optimal parameters for {dataset_name} (shuffled):",
                 shuffled_random_search.best_params_,
             )
+            print_convergence(shuffled_random_search.best_estimator_)
 
             # Save model
             shuffled_final_model_filename = (
@@ -227,27 +285,28 @@ for dataset_name, data_dict in training_data.items():
             print(f"Model saved as: {shuffled_final_model_filename}")
 
 
-# ## For all_hearts only model, train a multi-class logistic regression to predict the Metadata_heart_failure_type
+# ## For all hearts, train a multi-class logistic regression to predict the Metadata_heart_failure_type
+# 
+# The multi-class model uses the whole training split with no downsampling (class weights are balanced in the model instead).
 
-# In[7]:
+# In[8]:
 
 
 # Update label for the model
-label = "Metadata_heart_failure_type"
+label = subtype_col
 
-# Load in the all hearts dataset
-all_hearts_file = training_data_path / "model_all_hearts" / "training_split.parquet"
-all_hearts_df = pd.read_parquet(all_hearts_file)
+# Use the whole training split (all hearts) with no downsampling
+all_hearts_df = train_df.copy()
 
 # Update the Metadata_heart_failure_type for NaNs to 'Healthy'
-all_hearts_df[label] = all_hearts_df[label].fillna("Healthy")
+all_hearts_df[label] = all_hearts_df[label].fillna(healthy_label)
 
-# Print shape and value counts for the updated column
+# Print shape and number of single cells per class in the training data
 print(all_hearts_df.shape)
 print(all_hearts_df[label].value_counts())
 
 
-# In[8]:
+# In[9]:
 
 
 # Fit LabelEncoder
@@ -274,10 +333,13 @@ multi_class_training_data = {
     "y_train": y_train_encoded,
     "X_shuffled_train": X_shuffled_train,
     "y_shuffled_train": y_shuffled_train_encoded,
+    "cv_folds": get_heart_grouped_folds(
+        df=all_hearts_df, group_col=group_col, strata_col=label, n_splits=n_folds
+    ),
 }
 
 
-# In[9]:
+# In[10]:
 
 
 # Update just logreg_params for multi-class classification
@@ -287,12 +349,14 @@ logreg_params.update({"multi_class": "multinomial"})
 print("Updated Logistic Regression parameters for multi-class:", logreg_params)
 
 
-# In[10]:
+# In[11]:
 
 
 # Initialize Logistic Regression and RandomizedSearchCV
 logreg = LogisticRegression(**logreg_params)
-random_search = RandomizedSearchCV(logreg, **random_search_params)
+random_search = RandomizedSearchCV(
+    logreg, cv=multi_class_training_data["cv_folds"], **random_search_params
+)
 
 # Extract data for the multi-class all_hearts model
 X_train = multi_class_training_data["X_train"]
@@ -311,6 +375,7 @@ with parallel_backend("multiprocessing"):
         final_random_search = clone(random_search)
         final_random_search.fit(X_train, y_train)
         print("Optimal parameters (final):", final_random_search.best_params_)
+        print_convergence(final_random_search.best_estimator_)
 
         # Save model
         final_model_filename = model_dir / "model_all_hearts_final_multiclass.joblib"
@@ -324,6 +389,7 @@ with parallel_backend("multiprocessing"):
         shuffled_random_search = clone(random_search)
         shuffled_random_search.fit(X_shuffled_train, y_shuffled_train)
         print("Optimal parameters (shuffled):", shuffled_random_search.best_params_)
+        print_convergence(shuffled_random_search.best_estimator_)
 
         # Save model
         shuffled_final_model_filename = (

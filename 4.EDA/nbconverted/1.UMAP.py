@@ -1,12 +1,18 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# # Generate UMAPs for both QC and no QC datasets (feature selected profiles)
+# # Generate UMAP for the heart failure subtyping plates (QC'd feature selected profiles)
+# 
+# All plates in the run are combined and embedded together using the features shared across plates.
+# Set `hlhs_run = True` to use the HLHS plates instead of the default subtyping plates.
 
 # In[1]:
 
 
+import argparse
 import pathlib
+import sys
+
 import pandas as pd
 import umap
 from plotnine import (
@@ -30,190 +36,158 @@ from pycytominer.cyto_utils import infer_cp_features
 # In[2]:
 
 
-# Set constants
-umap_random_seed = 0
-umap_n_components = 2
+# Optional CLI fallback for direct script-style execution.
+def _str_to_bool(value: str) -> bool:
+    """
+    Convert a string to a boolean value.
 
-# Set plate to process (options are 251023130003 (orig), 251110170001 (plate redo))
-plate_id = "251023130003"
+    Args:
+        value (str): The string to convert.
 
-# Set embeddings directory
-output_dir = pathlib.Path("results")
-output_dir.mkdir(parents=True, exist_ok=True)
-
-# Figure directory
-figure_dir = pathlib.Path("figures/umaps")
-figure_dir.mkdir(parents=True, exist_ok=True)
-
-if plate_id == "251023130003":
-    figure_dir_plate = pathlib.Path(f"{figure_dir}/original_plate")
-    figure_dir_plate.mkdir(parents=True, exist_ok=True)
-else:
-    figure_dir_plate = pathlib.Path(f"{figure_dir}/plate_redo")
-    figure_dir_plate.mkdir(parents=True, exist_ok=True)
+    Returns:
+        bool: True if the string represents a true value, False otherwise.
+    """
+    return str(value).strip().lower() in ("1", "true", "yes")
 
 
 # In[3]:
 
 
-# Load in QC and no QC datasets (feature selected profiles)
-data_dir = pathlib.Path("../3.preprocessing_profiles/data/single_cell_profiles/")
+# Set if this run is for the HLHS plates (will be updated by papermill)
+hlhs_run = True
 
-qc_df = pd.read_parquet(
-    data_dir / f"CARD-CelIns-CX7_{plate_id}_sc_feature_selected.parquet"
+parser = argparse.ArgumentParser(add_help=False)
+parser.add_argument(
+    "--hlhs-run", dest="hlhs_run", type=_str_to_bool, default=hlhs_run
 )
-no_qc_df = pd.read_parquet(
-    data_dir / f"CARD-CelIns-CX7_{plate_id}_sc_feature_selected_no_QC.parquet"
-)
-
-print(f"QC dataset shape: {qc_df.shape}")
-print(f"No QC dataset shape: {no_qc_df.shape}")
+args, _ = parser.parse_known_args(sys.argv[1:])
+hlhs_run = args.hlhs_run
 
 
 # In[4]:
 
 
-# Add Metadata_QC_status column to the no_QC dataset
-no_qc_df["Metadata_QC_status"] = "failed_QC"
+# Set constants
+umap_random_seed = 0
+umap_n_components = 2
 
-# Metadata columns to match
-metadata_cols = [
+# Directory with the single-cell profiles and figure directory
+# (HLHS plates are in a subfolder of the default subtyping plates)
+if hlhs_run:
+    data_dir = pathlib.Path("../3.preprocessing_profiles/data/single_cell_profiles/hlhs")
+    figure_dir = pathlib.Path("figures/umaps/hlhs_plates")
+else:
+    data_dir = pathlib.Path("../3.preprocessing_profiles/data/single_cell_profiles/")
+    figure_dir = pathlib.Path("figures/umaps/subtyping_plates")
+figure_dir.mkdir(parents=True, exist_ok=True)
+
+# Figure directory for the UMAPs generated per plate
+per_plate_figure_dir = figure_dir / "per_plate"
+per_plate_figure_dir.mkdir(parents=True, exist_ok=True)
+
+# Columns that uniquely identify a single cell
+cell_id_cols = [
     "Metadata_Plate",
     "Metadata_Well",
     "Metadata_Site",
-    "Metadata_Nuclei_Location_Center_X",
-    "Metadata_Nuclei_Location_Center_Y",
+    "Metadata_Nuclei_Number_Object_Number",
 ]
 
-# Mark matching rows as passed_QC
-no_qc_df.loc[
-    no_qc_df[metadata_cols]
-    .apply(tuple, axis=1)
-    .isin(qc_df[metadata_cols].apply(tuple, axis=1)),
-    "Metadata_QC_status",
-] = "passed_QC"
+# Colorblind-friendly palette for the heart failure types
+failure_type_colors = {
+    "Healthy": "#009E73",
+    "DCM": "#0072B2",
+    "ICM": "#E69F00",
+}
+if hlhs_run:
+    failure_type_colors["HLHS"] = "#CC79A7"
 
-# Print Metadata_QC_status counts
-print(no_qc_df["Metadata_QC_status"].value_counts())
-
-
-# ## UMAP for no-QC profile
 
 # In[5]:
 
 
-# Process cp_df to separate features and metadata
-cp_features = infer_cp_features(no_qc_df)
-meta_features = infer_cp_features(no_qc_df, metadata=True)
+# Load in the QC feature selected profiles for all plates in the run
+fs_paths = sorted(data_dir.glob("*_sc_feature_selected.parquet"))
+if not fs_paths:
+    raise FileNotFoundError(f"No feature selected parquet files found in {data_dir}")
 
-# Initialize UMAP instance
-umap_fit = umap.UMAP(
-    random_state=umap_random_seed, n_components=umap_n_components, n_jobs=1
-)
+plate_dfs = []
+for path in fs_paths:
+    plate_df = pd.read_parquet(path)
+    print(f"{path.name}: {plate_df.shape}")
+    plate_dfs.append(plate_df)
 
-# Fit UMAP and convert to pandas DataFrame
-embeddings = pd.DataFrame(
-    umap_fit.fit_transform(no_qc_df.loc[:, cp_features]),
-    columns=[f"UMAP{x}" for x in range(0, umap_n_components)],
-    index=no_qc_df.index,  # ✅ ensures alignment
-)
-print(f"{embeddings.shape} UMAP embeddings generated")
+# Feature selection is performed per plate, so only keep the columns shared across all plates
+qc_df = pd.concat(plate_dfs, join="inner", ignore_index=True)
 
-# Combine with metadata
-cp_umap_with_metadata_no_qc_df = pd.concat(
-    [no_qc_df.loc[:, meta_features], embeddings], axis=1
-)
+print(f"Combined QC dataset shape: {qc_df.shape}")
+print(f"Number of shared CellProfiler features: {len(infer_cp_features(qc_df))}")
+print(qc_df["Metadata_Plate"].value_counts())
 
 
 # In[6]:
 
 
-# Create a facet label that includes "Heart #"
-cp_umap_with_metadata_no_qc_df["Metadata_heart_number"] = (
-    cp_umap_with_metadata_no_qc_df["Metadata_heart_number"].astype(str)
-)
-cp_umap_with_metadata_no_qc_df["Metadata_heart_number_label"] = (
-    "Heart #" + cp_umap_with_metadata_no_qc_df["Metadata_heart_number"]
+# Actin max intensity can be removed during feature selection, so load it from the
+# normalized profiles and add Metadata_ prefix to use in UMAP plot later
+actin_df = pd.concat(
+    [
+        pd.read_parquet(
+            pathlib.Path(str(path).replace("_sc_feature_selected", "_sc_normalized")),
+            columns=cell_id_cols + ["Cells_Intensity_MaxIntensity_Actin"],
+        )
+        for path in fs_paths
+    ],
+    ignore_index=True,
+).rename(
+    columns={
+        "Cells_Intensity_MaxIntensity_Actin": "Metadata_Cells_Intensity_MaxIntensity_Actin"
+    }
 )
 
-# Set categorical ordering for heart number labels
-cp_umap_with_metadata_no_qc_df["Metadata_heart_number_label"] = pd.Categorical(
-    cp_umap_with_metadata_no_qc_df["Metadata_heart_number_label"],
-    categories=[
-        "Heart #2",
-        "Heart #7",
-        "Heart #23",
-        "Heart #25",
-        "Heart #46",
-        "Heart #47",
-    ],
+qc_df = qc_df.merge(actin_df, on=cell_id_cols, how="left", validate="one_to_one")
+assert qc_df["Metadata_Cells_Intensity_MaxIntensity_Actin"].notna().all()
+
+# Healthy hearts have no heart failure type, so label them as Healthy
+qc_df["Metadata_heart_failure_type"] = pd.Categorical(
+    qc_df["Metadata_heart_failure_type"].fillna("Healthy"),
+    categories=list(failure_type_colors),
     ordered=True,
 )
 
-# Reorder so the orange points (failed QC) are plotted on top of blue points (passed QC)
-cp_umap_with_metadata_no_qc_df = cp_umap_with_metadata_no_qc_df.sort_values(
-    by="Metadata_QC_status", ascending=False
-)
-
-# Set the figure size
-height = 8
-width = 8
-set_option("figure_size", (width, height))
-
-# Plot UMAP of non-QC profiles labelled with QC status and
-# faceted by treatment and cell type
-p = (
-    ggplot(
-        cp_umap_with_metadata_no_qc_df,
-        aes(x="UMAP0", y="UMAP1", color="Metadata_QC_status"),
-    )
-    + labs(
-        color="QC Status",
-    )
-    + geom_point(alpha=0.1, size=2)
-    + facet_wrap(
-        "Metadata_heart_number_label",
-        ncol=2,
-        scales="fixed",
-    )
-    + theme_bw()
-    + theme(
-        axis_title=element_text(size=20),
-        axis_text=element_text(size=16),
-        legend_title=element_text(size=16),
-        legend_text=element_text(size=14),
-        legend_position="bottom",
-        strip_text=element_text(size=16),  # Adjust facet label size
-    )
-    + scale_color_manual(
-        values={"passed_QC": "#0072B2", "failed_QC": "#D55E00"}
-    )  # Blue for passed, orange for failed (colorblind-friendly)
-    + guides(
-        color=guide_legend(
-            override_aes={
-                "alpha": 1,  # fully opaque in legend
-                "size": 5,  # bigger points in legend
-            }
+# Create a facet label that includes "Heart #" and order by failure type then heart
+qc_df["Metadata_heart_number"] = qc_df["Metadata_heart_number"].astype(str)
+qc_df["Metadata_heart_number_label"] = "Heart #" + qc_df["Metadata_heart_number"]
+heart_order = (
+    qc_df[["Metadata_heart_failure_type", "Metadata_heart_number"]]
+    .drop_duplicates()
+    .assign(
+        heart_sort=lambda df: pd.to_numeric(
+            df["Metadata_heart_number"], errors="coerce"
         )
     )
+    .sort_values(["Metadata_heart_failure_type", "heart_sort", "Metadata_heart_number"])
 )
-# Save the plot
-p.save(
-    figure_dir_plate / "facet_umap_no_QC_plot.png", dpi=600, width=width, height=height
+qc_df["Metadata_heart_number_label"] = pd.Categorical(
+    qc_df["Metadata_heart_number_label"],
+    categories=("Heart #" + heart_order["Metadata_heart_number"]).tolist(),
+    ordered=True,
 )
 
-p.show()
+print(
+    qc_df.groupby(
+        ["Metadata_heart_failure_type", "Metadata_heart_number", "Metadata_Plate"],
+        observed=True,
+    )
+    .size()
+    .unstack("Metadata_Plate")
+)
 
 
-# ## UMAP with QC profiles
+# ## UMAP with QC profiles (all plates in the run)
 
 # In[7]:
 
-
-# Copy Cells_Intensity_MaxIntensity_Actin and add Metadata_ prefix to use in UMAP plot later
-qc_df["Metadata_Cells_Intensity_MaxIntensity_Actin"] = qc_df[
-    "Cells_Intensity_MaxIntensity_Actin"
-]
 
 # Process cp_df to separate features and metadata
 cp_features = infer_cp_features(qc_df)
@@ -237,6 +211,11 @@ cp_umap_with_metadata_qc_df = pd.concat(
     [qc_df.loc[:, meta_features], embeddings], axis=1
 )
 
+# Shuffle the rows so no single plate or heart is always plotted on top
+cp_umap_with_metadata_qc_df = cp_umap_with_metadata_qc_df.sample(
+    frac=1, random_state=umap_random_seed
+)
+
 
 # In[8]:
 
@@ -246,27 +225,148 @@ height = 8
 width = 8
 set_option("figure_size", (width, height))
 
-# Add "Heart #" label for facets
-cp_umap_with_metadata_qc_df["Metadata_heart_number"] = cp_umap_with_metadata_qc_df[
-    "Metadata_heart_number"
-].astype(str)
-cp_umap_with_metadata_qc_df["Metadata_heart_number_label"] = (
-    "Heart #" + cp_umap_with_metadata_qc_df["Metadata_heart_number"]
+# Plot UMAP of QC profiles colored by plate to check for plate effects
+p = (
+    ggplot(
+        cp_umap_with_metadata_qc_df,
+        aes(x="UMAP0", y="UMAP1", color="Metadata_Plate"),
+    )
+    + labs(
+        color="Plate",
+    )
+    + geom_point(alpha=0.2, size=1)
+    + theme_bw()
+    + theme(
+        axis_title=element_text(size=20),
+        axis_text=element_text(size=16),
+        legend_title=element_text(size=16),
+        legend_text=element_text(size=12),
+        legend_position="bottom",
+    )
+    + scale_color_manual(values=["#0072B2", "#D55E00", "#009E73"])
+    + guides(
+        color=guide_legend(
+            ncol=1,
+            override_aes={
+                "alpha": 1,  # fully opaque in legend
+                "size": 5,  # bigger points in legend
+            },
+        )
+    )
+)
+# Save the plot
+p.save(figure_dir / "umap_with_QC_by_plate.png", dpi=600, width=width, height=height)
+
+p.show()
+
+
+# In[9]:
+
+
+# Set the figure size
+height = 8
+width = 8
+set_option("figure_size", (width, height))
+
+# Plot UMAP of QC profiles colored by heart failure type
+p = (
+    ggplot(
+        cp_umap_with_metadata_qc_df,
+        aes(x="UMAP0", y="UMAP1", color="Metadata_heart_failure_type"),
+    )
+    + labs(
+        color="Heart failure type",
+    )
+    + geom_point(alpha=0.2, size=1)
+    + theme_bw()
+    + theme(
+        axis_title=element_text(size=20),
+        axis_text=element_text(size=16),
+        legend_title=element_text(size=16),
+        legend_text=element_text(size=14),
+        legend_position="bottom",
+    )
+    + scale_color_manual(values=failure_type_colors)
+    + guides(
+        color=guide_legend(
+            override_aes={
+                "alpha": 1,  # fully opaque in legend
+                "size": 5,  # bigger points in legend
+            }
+        )
+    )
+)
+# Save the plot
+p.save(
+    figure_dir / "umap_with_QC_by_failure_type.png",
+    dpi=600,
+    width=width,
+    height=height,
 )
 
-# Set categorical ordering for heart number labels
-cp_umap_with_metadata_qc_df["Metadata_heart_number_label"] = pd.Categorical(
-    cp_umap_with_metadata_qc_df["Metadata_heart_number_label"],
-    categories=[
-        "Heart #2",
-        "Heart #7",
-        "Heart #23",
-        "Heart #25",
-        "Heart #46",
-        "Heart #47",
-    ],
-    ordered=True,
+p.show()
+
+
+# In[10]:
+
+
+# Set the figure size
+height = 10
+width = 12
+set_option("figure_size", (width, height))
+
+# Plot UMAP of QC profiles colored by heart failure type and faceted by heart number
+p = (
+    ggplot(
+        cp_umap_with_metadata_qc_df,
+        aes(x="UMAP0", y="UMAP1", color="Metadata_heart_failure_type"),
+    )
+    + labs(
+        color="Heart failure type",
+    )
+    + geom_point(alpha=0.2, size=1)
+    + facet_wrap(
+        "Metadata_heart_number_label",
+        ncol=4,
+        scales="fixed",
+    )
+    + theme_bw()
+    + theme(
+        axis_title=element_text(size=20),
+        axis_text=element_text(size=16),
+        legend_title=element_text(size=16),
+        legend_text=element_text(size=14),
+        legend_position="bottom",
+        strip_text=element_text(size=16),  # Adjust facet label size
+    )
+    + scale_color_manual(values=failure_type_colors)
+    + guides(
+        color=guide_legend(
+            override_aes={
+                "alpha": 1,  # fully opaque in legend
+                "size": 5,  # bigger points in legend
+            }
+        )
+    )
 )
+# Save the plot
+p.save(
+    figure_dir / "facet_umap_with_QC_by_failure_type.png",
+    dpi=600,
+    width=width,
+    height=height,
+)
+
+p.show()
+
+
+# In[11]:
+
+
+# Set the figure size
+height = 10
+width = 12
+set_option("figure_size", (width, height))
 
 # Plot UMAP of QC profiles colored by actin max intensity and faceted by heart number
 p = (
@@ -277,10 +377,10 @@ p = (
     + labs(
         color="Actin max intensity",
     )
-    + geom_point(alpha=0.3, size=2)
+    + geom_point(alpha=0.3, size=1)
     + facet_wrap(
         "Metadata_heart_number_label",
-        ncol=2,
+        ncol=4,
         scales="fixed",
     )
     + theme_bw()
@@ -296,7 +396,7 @@ p = (
 )
 # Save the plot
 p.save(
-    figure_dir_plate / "facet_umap_with_QC_plot.png",
+    figure_dir / "facet_umap_with_QC_plot.png",
     dpi=600,
     width=width,
     height=height,
@@ -305,139 +405,72 @@ p.save(
 p.show()
 
 
-# In[9]:
-
-
-# Filter qc_df to heart #2 and generate the faceted UMAP by Metadata_treatment
-cp_umap_with_metadata_qc_h2_df = cp_umap_with_metadata_qc_df[
-    qc_df["Metadata_heart_number"] == 2
-].copy()
-print(f"Filtered QC (heart 2) shape: {cp_umap_with_metadata_qc_df.shape}")
-
-# Change "None" string (not NA) treatment to "Media" for better visualization
-cp_umap_with_metadata_qc_h2_df["Metadata_treatment"] = cp_umap_with_metadata_qc_h2_df[
-    "Metadata_treatment"
-].replace("None", "Media")
-
-# Plot (colored by actin max intensity, faceted by treatment)
-width = 9
-height = 6
-set_option("figure_size", (width, height))
-p = (
-    ggplot(
-        cp_umap_with_metadata_qc_h2_df,
-        aes(x="UMAP0", y="UMAP1", color="Metadata_Cells_Intensity_MaxIntensity_Actin"),
-    )
-    + labs(color="Actin max intensity")
-    + geom_point(alpha=0.3, size=2)
-    + facet_wrap("Metadata_treatment", ncol=2, scales="fixed")
-    + theme_bw()
-    + theme(
-        axis_title=element_text(size=20),
-        axis_text=element_text(size=16),
-        legend_title=element_text(size=16),
-        legend_text=element_text(size=14),
-        legend_position="bottom",
-        strip_text=element_text(size=16),
-    )
-    + scale_color_gradient2(low="#0072B2", mid="#999999", high="#E69F00", midpoint=0)
-)
-
-# Save and show
-p.save(
-    figure_dir_plate / "facet_umap_qc_heart2_by_treatment.png",
-    dpi=600,
-    width=width,
-    height=height,
-)
-p.show()
-
-
-# ## UMAP of only hearts 7 and 25 to compare (in relation to drug screening)
-
-# In[10]:
-
-
-# Copy Cells_Intensity_MaxIntensity_Actin and add Metadata_ prefix to use in UMAP plot later
-qc_df["Metadata_Cells_Intensity_MaxIntensity_Actin"] = qc_df[
-    "Cells_Intensity_MaxIntensity_Actin"
-]
-
-# Keep only hearts #7 and #25 for UMAP
-filtered_qc_df = qc_df[qc_df["Metadata_heart_number"].isin([7, 25])].copy()
-print(f"Filtered QC (hearts 7 and 25) shape: {filtered_qc_df.shape}")
-
-# Process cp_df to separate features and metadata
-cp_features = infer_cp_features(filtered_qc_df)
-meta_features = infer_cp_features(filtered_qc_df, metadata=True)
-
-# Initialize UMAP instance
-umap_fit = umap.UMAP(
-    random_state=umap_random_seed,
-    n_components=umap_n_components,
-    n_jobs=1,
-)
-
-# Fit UMAP and convert to pandas DataFrame
-embeddings = pd.DataFrame(
-    umap_fit.fit_transform(filtered_qc_df.loc[:, cp_features]),
-    columns=[f"UMAP{x}" for x in range(0, umap_n_components)],
-    index=filtered_qc_df.index,  # ✅ ensures alignment
-)
-print(f"{embeddings.shape} UMAP embeddings generated")
-
-# Combine with metadata
-cp_umap_with_metadata_qc_df = pd.concat(
-    [filtered_qc_df.loc[:, meta_features], embeddings], axis=1
-)
-
-
-# In[11]:
-
-
-print(filtered_qc_df.index.equals(embeddings.index))
-
+# ## UMAP per plate
+# 
+# Each plate is embedded on its own using that plate's feature selected features.
 
 # In[12]:
 
 
 # Set the figure size
-height = 8
-width = 8
+height = 10
+width = 12
 set_option("figure_size", (width, height))
-# Ensure Metadata_heart_number is categorical for manual color mapping
-cp_umap_with_metadata_qc_df["Metadata_heart_number"] = cp_umap_with_metadata_qc_df[
-    "Metadata_heart_number"
-].astype(str)
 
-# Plot UMAP of QC profiles colored by heart number (manual colors, not gradient)
-p = (
-    ggplot(
-        cp_umap_with_metadata_qc_df,
-        aes(x="UMAP0", y="UMAP1", color="Metadata_heart_number"),
-    )
-    + labs(
-        color="Heart Number",
-    )
-    + geom_point(alpha=0.3, size=2)
-    + theme_bw()
-    + theme(
-        axis_title=element_text(size=20),
-        axis_text=element_text(size=16),
-        legend_title=element_text(size=16),
-        legend_text=element_text(size=14),
-        legend_position="bottom",
-        strip_text=element_text(size=16),
-    )
-    + scale_color_manual(values={"7": "#24B200", "25": "#6D006D"})
-)
-# Save the plot
-p.save(
-    figure_dir_plate / "umap_with_QC_hearts_7_25.png",
-    dpi=600,
-    width=width,
-    height=height,
-)
+for plate_df in plate_dfs:
+    plate = plate_df["Metadata_Plate"].iloc[0]
 
-p.show()
+    # Fit UMAP using all of the feature selected features for this plate
+    umap_fit = umap.UMAP(
+        random_state=umap_random_seed, n_components=umap_n_components, n_jobs=1
+    )
+    plate_umap_df = pd.DataFrame(
+        umap_fit.fit_transform(plate_df.loc[:, infer_cp_features(plate_df)]),
+        columns=[f"UMAP{x}" for x in range(0, umap_n_components)],
+        index=plate_df.index,
+    )
+    print(f"{plate}: {plate_umap_df.shape} UMAP embeddings generated")
+
+    # Add the failure type and heart labels (same ordering as the combined plots)
+    plate_umap_df["Metadata_heart_failure_type"] = pd.Categorical(
+        plate_df["Metadata_heart_failure_type"].fillna("Healthy"),
+        categories=list(failure_type_colors),
+        ordered=True,
+    )
+    plate_umap_df["Metadata_heart_number_label"] = pd.Categorical(
+        "Heart #" + plate_df["Metadata_heart_number"].astype(str),
+        categories=qc_df["Metadata_heart_number_label"].cat.categories,
+        ordered=True,
+    )
+
+    # Plot UMAP colored by heart failure type and faceted by heart number
+    p = (
+        ggplot(
+            plate_umap_df,
+            aes(x="UMAP0", y="UMAP1", color="Metadata_heart_failure_type"),
+        )
+        + labs(color="Heart failure type", title=plate)
+        + geom_point(alpha=0.2, size=1)
+        + facet_wrap("Metadata_heart_number_label", ncol=4, scales="fixed")
+        + theme_bw()
+        + theme(
+            axis_title=element_text(size=20),
+            axis_text=element_text(size=16),
+            legend_title=element_text(size=16),
+            legend_text=element_text(size=14),
+            legend_position="bottom",
+            strip_text=element_text(size=16),
+        )
+        + scale_color_manual(values=failure_type_colors)
+        + guides(color=guide_legend(override_aes={"alpha": 1, "size": 5}))
+    )
+    # Save the plot
+    p.save(
+        per_plate_figure_dir / f"{plate}_facet_umap_by_failure_type.png",
+        dpi=600,
+        width=width,
+        height=height,
+    )
+
+    p.show()
 

@@ -11,6 +11,7 @@
 
 
 from joblib import load
+import os
 import pathlib
 import pandas as pd
 import numpy as np
@@ -24,21 +25,20 @@ import matplotlib.pyplot as plt
 # In[2]:
 
 
-# Set plate to process
-plate_to_process = "redo"  # options: "original" or "redo"
+# Set the plate to process with the PLATE_TO_TRAIN environment variable (defaults to the subtyping plate)
+plate_to_process = os.environ.get("PLATE_TO_TRAIN", "CARD-CelIns-CX7_260814100001")
 
 # Output dir for coefficients data
-coeff_dir = pathlib.Path(f"./coeff_data/{plate_to_process}_DMSO_plate")
+coeff_dir = pathlib.Path(f"./coeff_data/{plate_to_process}")
 coeff_dir.mkdir(parents=True, exist_ok=True)
 
 # Directory of models
-model_dir = pathlib.Path(f"./models/{plate_to_process}_DMSO_plate").resolve(strict=True)
+model_dir = pathlib.Path(f"./models/{plate_to_process}").resolve(strict=True)
 
-# Define expected model files (adjust names if your filenames differ)
+# Find the final binary models (all hearts and per failing subtype)
 model_files = {
-    "all_hearts": "model_all_hearts_final_downsample.joblib",
-    "DCM": "model_DCM_final_downsample.joblib",
-    "HCM": "model_HCM_final_downsample.joblib",
+    f.stem.replace("model_", "").replace("_final_downsample", ""): f.name
+    for f in sorted(model_dir.glob("model_*_final_downsample.joblib"))
 }
 
 # Load each model into a dict
@@ -116,7 +116,7 @@ for key, mdl in models.items():
         # Add ranking column based on coefficient value (raw; most positive = rank 1)
         if "Coefficient" in df.columns:
             zero_mask = df["Coefficient"].to_numpy() == 0
-            rng = np.random.default_rng()
+            rng = np.random.default_rng(0)
 
             # If multiple zeros, break ties randomly so they don't all get the same rank
             if zero_mask.sum() > 1:
