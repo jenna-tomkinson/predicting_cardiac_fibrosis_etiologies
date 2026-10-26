@@ -129,6 +129,9 @@ label = "Metadata_cell_type"
 subtype_col = "Metadata_heart_failure_type"
 healthy_label = "Healthy"
 
+# Healthy hearts are shown as non-failing in the plots
+display_labels = {healthy_label: "Non-failing"}
+
 # Metadata column with the heart each single cell comes from (one heart is held out at a time)
 group_col = "Metadata_heart_number"
 
@@ -436,7 +439,8 @@ axes[0].set_ylabel("Accuracy on held out heart")
 
 # Legend for subtype colors, shuffled baseline, and chance
 legend_handles = [
-    Patch(color=color, label=subtype) for subtype, color in subtype_colors.items()
+    Patch(color=color, label=display_labels.get(subtype, subtype))
+    for subtype, color in subtype_colors.items()
 ] + [
     Line2D([], [], marker="_", markersize=18, markeredgewidth=2.5, linestyle="None", color=ink_color, label="Shuffled baseline"),
     Line2D([], [], linestyle="--", linewidth=1, color=ink_color, label="Chance"),
@@ -492,7 +496,10 @@ fig, ax = plt.subplots(figsize=(10, 6))
 # Hearts listed top to bottom in subtype order
 plot_df = predicted_proportions_df.iloc[::-1]
 y = np.arange(len(plot_df))
-y_labels = [f"{subtype} heart {heart}" for subtype, heart in plot_df.index]
+y_labels = [
+    f"{display_labels.get(subtype, subtype)} heart {heart}"
+    for subtype, heart in plot_df.index
+]
 
 left = np.zeros(len(plot_df))
 for predicted_subtype in subtype_order:
@@ -504,7 +511,7 @@ for predicted_subtype in subtype_order:
         color=subtype_colors[predicted_subtype],
         edgecolor="white",
         linewidth=2,
-        label=predicted_subtype,
+        label=display_labels.get(predicted_subtype, predicted_subtype),
     )
     left += plot_df[predicted_subtype].to_numpy()
 

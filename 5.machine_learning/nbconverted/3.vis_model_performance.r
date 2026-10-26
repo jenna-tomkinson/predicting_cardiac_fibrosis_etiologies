@@ -61,6 +61,9 @@ all_models_pr_curves
 
 probability_results <- read_parquet(file.path("performance_metrics", plate_to_process, "all_models_predicted_probabilities.parquet"))
 
+# Show healthy hearts as non-failing in the plots
+probability_results$actual_label[probability_results$actual_label == "Healthy"] <- "Non-failing"
+
 head(probability_results)
 
 
@@ -85,7 +88,7 @@ ridge_plot_test <- ggplot(test_performance_df, aes(x = predicted_probability, y 
   scale_fill_brewer(palette = "Dark2") +  # Color by heart type
   scale_x_continuous(breaks = seq(0, 1, 0.5)) +
   facet_grid(model_type ~ model_name, scales = "free_y") + 
-  labs(x = "Probability of healthy prediction", y = "Heart Type") +  # Update x-axis label
+  labs(x = "Probability of non-failing prediction", y = "Heart Type") +  # Update x-axis label
   theme_bw() +
   theme(
     legend.position = "none",
@@ -117,7 +120,7 @@ ridge_plot_test <- ggplot(test_performance_df, aes(x = predicted_probability, y 
   scale_fill_brewer(palette = "Dark2") +  # Color by heart type
   scale_x_continuous(breaks = seq(0, 1, 0.5)) +
   facet_grid(model_type ~ model_name, scales = "free_y") + 
-  labs(x = "Probability of healthy prediction", y = "Heart Number") +  # Updated y-axis label
+  labs(x = "Probability of non-failing prediction", y = "Heart Number") +  # Updated y-axis label
   theme_bw() +
   theme(
     legend.position = "none",
@@ -144,7 +147,7 @@ head(probability_results)
 accuracy_per_heart <- probability_results %>%
     mutate(
     predicted_binary = ifelse(predicted_probability >= 0.5, 1L, 0L),
-    actual_binary = as.integer(actual_label == "Healthy")
+    actual_binary = as.integer(actual_label == "Non-failing")
 ) %>%
     group_by(model_name, model_type, dataset, Metadata_heart_number) %>%
     summarize(
@@ -196,6 +199,8 @@ head(multi_class_pr_results)
 # Define mapping from integer → string (from the multi-class label encoder in 1.train_models)
 label_mapping <- read.csv(file.path("performance_metrics", plate_to_process, "multi_class_label_mapping.csv"))
 class_label <- setNames(label_mapping$class_label, as.character(label_mapping$encoded_label))
+# Show healthy hearts as non-failing in the plots
+class_label[class_label == "Healthy"] <- "Non-failing"
 
 # Update multi_class_pr_results if it exists
 if (exists("multi_class_pr_results") && "class_label" %in% names(multi_class_pr_results)) {
@@ -286,8 +291,8 @@ accuracy_barplot
 # Load in the predicted probabilities per single cell for the multi-class model
 multi_class_probability_results <- read_parquet(file.path("performance_metrics", plate_to_process, "multi_class_cell_probabilities.parquet"))
 
-# Order of the subtypes for plotting (Healthy first, then the failing subtypes)
-subtype_order <- c("Healthy", sort(setdiff(class_label, "Healthy")))
+# Order of the subtypes for plotting (Non-failing first, then the failing subtypes)
+subtype_order <- c("Non-failing", sort(setdiff(class_label, "Non-failing")))
 
 # Reshape to one row per single cell and subtype probability, and map the encoded labels to subtypes
 multi_class_test_probabilities <- multi_class_probability_results %>%

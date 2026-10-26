@@ -95,7 +95,7 @@ cell_id_cols = [
 
 # Colorblind-friendly palette for the heart failure types
 failure_type_colors = {
-    "Healthy": "#009E73",
+    "Non-failing": "#009E73",
     "DCM": "#0072B2",
     "ICM": "#E69F00",
 }
@@ -148,9 +148,9 @@ actin_df = pd.concat(
 qc_df = qc_df.merge(actin_df, on=cell_id_cols, how="left", validate="one_to_one")
 assert qc_df["Metadata_Cells_Intensity_MaxIntensity_Actin"].notna().all()
 
-# Healthy hearts have no heart failure type, so label them as Healthy
+# Healthy hearts have no heart failure type, so label them as Non-failing
 qc_df["Metadata_heart_failure_type"] = pd.Categorical(
-    qc_df["Metadata_heart_failure_type"].fillna("Healthy"),
+    qc_df["Metadata_heart_failure_type"].fillna("Non-failing"),
     categories=list(failure_type_colors),
     ordered=True,
 )
@@ -433,7 +433,7 @@ for plate_df in plate_dfs:
 
     # Add the failure type and heart labels (same ordering as the combined plots)
     plate_umap_df["Metadata_heart_failure_type"] = pd.Categorical(
-        plate_df["Metadata_heart_failure_type"].fillna("Healthy"),
+        plate_df["Metadata_heart_failure_type"].fillna("Non-failing"),
         categories=list(failure_type_colors),
         ordered=True,
     )

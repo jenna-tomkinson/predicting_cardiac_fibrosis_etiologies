@@ -4,11 +4,11 @@ suppressPackageStartupMessages(library(platetools))
 
 
 # Shape (filled) for each heart failure subtype, consistent across all platemaps
-heart_failure_type_shapes <- c("Healthy" = 21, "DCM" = 22, "ICM" = 23, "HLHS" = 24)
+heart_failure_type_shapes <- c("Non-failing" = 21, "DCM" = 22, "ICM" = 23, "HLHS" = 24)
 # Squares, diamonds, and triangles are scaled to look the same size as circles
-heart_failure_type_sizes <- c("Healthy" = 16.5, "DCM" = 15, "ICM" = 13.5, "HLHS" = 11.5)
+heart_failure_type_sizes <- c("Non-failing" = 16.5, "DCM" = 15, "ICM" = 13.5, "HLHS" = 11.5)
 # Sizes of the shapes in the legend so they look the same size as each other
-heart_failure_type_legend_sizes <- c("Healthy" = 6, "DCM" = 5.4, "ICM" = 4.4, "HLHS" = 3.8)
+heart_failure_type_legend_sizes <- c("Non-failing" = 6, "DCM" = 5.4, "ICM" = 4.4, "HLHS" = 3.8)
 
 # Plot a 96-well platemap where the well shape and color show the heart failure subtype
 # and the label (well_label column) is shown inside each well
@@ -124,8 +124,9 @@ for (plate in names(output_platemap_files)) {
     col_types = readr::cols(.default = "c")
 )
 
-    # for plotting replace NaN as "healthy" for heart failure type
-    df$heart_failure_type[is.na(df$heart_failure_type)] <- "Healthy"
+    # for plotting replace NaN as "Non-failing" for heart failure type and show healthy hearts as non-failing
+    df$heart_failure_type[is.na(df$heart_failure_type)] <- "Non-failing"
+    df$cell_type[df$cell_type == "Healthy"] <- "Non-failing"
 
 
     platemap_dfs[[plate]] <- df 
@@ -136,7 +137,7 @@ print(platemap_dfs)
 
 # Consistent color mapping for heart failure subtype across all platemaps
 heart_failure_type_colors <- c(
-    "Healthy" = "#009E73",  # green (Okabe-Ito palette)
+    "Non-failing" = "#009E73",  # green (Okabe-Ito palette)
     "DCM" = "#D55E00",      # vermillion
     "ICM" = "#0072B2",      # blue
     "HLHS" = "#CC79A7"      # pink-purple

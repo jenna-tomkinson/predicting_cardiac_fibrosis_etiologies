@@ -280,7 +280,16 @@ def plot_well_quality(
         if heart_number in hearts_in_plot
     ]
     failure_type_handles = [
-        Line2D([], [], marker=marker, linestyle="", markersize=9, color="#777777", label=failure_type)
+        Line2D(
+            [],
+            [],
+            marker=marker,
+            linestyle="",
+            markersize=9,
+            color="#777777",
+            # Healthy hearts are shown as non-failing
+            label="Non-failing" if failure_type == "Healthy" else failure_type,
+        )
         for failure_type, marker in failure_type_markers.items()
         if failure_type in set(heart_failure_types)
     ]

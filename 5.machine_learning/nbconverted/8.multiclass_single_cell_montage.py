@@ -292,6 +292,11 @@ label_encoder = load(encoder_path)
 class_names = label_encoder.inverse_transform(model.classes_)
 class_order = [class_name for class_name in class_order if class_name in class_names]
 
+# Healthy hearts are shown as non-failing in the montage rows
+class_display_order = [
+    "Non-failing" if class_name == healthy_label else class_name for class_name in class_order
+]
+
 cells_df = pd.concat(
     [
         pd.read_parquet(split_dir / file_name).assign(dataset=split_name)
@@ -409,7 +414,7 @@ composites = make_cell_composites(
 fig = plot_montage(
     selected_df=selected_cells_df,
     composites=composites,
-    class_order=class_order,
+    class_order=class_display_order,
     n_cells_per_class=n_cells_per_class,
     channel_colors=channel_colors,
     channel_names=channel_names,
@@ -477,7 +482,7 @@ balanced_composites = make_cell_composites(
 fig = plot_montage(
     selected_df=balanced_cells_df,
     composites=balanced_composites,
-    class_order=class_order,
+    class_order=class_display_order,
     n_cells_per_class=n_cells_per_class,
     channel_colors=channel_colors,
     channel_names=channel_names,

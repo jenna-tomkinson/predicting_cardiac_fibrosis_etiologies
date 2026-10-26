@@ -41,10 +41,10 @@ profile_df.head()
 # In[5]:
 
 
-# Label hearts without a heart failure subtype (None) as Healthy
+# Label hearts without a heart failure subtype (None) as Non-failing
 profile_df["Metadata_heart_failure_type"] = profile_df[
     "Metadata_heart_failure_type"
-].fillna("Healthy")
+].fillna("Non-failing")
 
 # Compute counts per heart failure subtype, heart, and plate
 counts_df = (
@@ -55,9 +55,9 @@ counts_df = (
     .reset_index(name="cell_count")
 )
 
-# Order the panels with Healthy first and then the remaining subtypes
-subtypes = ["Healthy"] + sorted(
-    set(counts_df["Metadata_heart_failure_type"]) - {"Healthy"}
+# Order the panels with Non-failing first and then the remaining subtypes
+subtypes = ["Non-failing"] + sorted(
+    set(counts_df["Metadata_heart_failure_type"]) - {"Non-failing"}
 )
 hearts_per_subtype = {
     subtype: sorted(

@@ -127,7 +127,8 @@ def add_platemap_legends(
             markersize=15 * np.sqrt(subtype_marker_scale[subtype]),
             markerfacecolor="white",
             markeredgecolor="#4d4d4b",
-            label=subtype,
+            # Healthy hearts are shown as non-failing
+            label="Non-failing" if subtype == "Healthy" else subtype,
         )
         for subtype, marker in subtype_markers.items()
     ]
@@ -169,7 +170,7 @@ def add_platemap_legends(
     )
     cbar = fig.colorbar(mappable, cax=cbar_ax)
     cbar.ax.set_title(
-        "Mean healthy\nprobability",
+        "Mean non-failing\nprobability",
         fontsize=10,
         fontweight="bold",
         loc="left",
@@ -376,7 +377,7 @@ mappable = plot_probability_platemap(
     well_prob_df, ax=ax, title=f"{plate_trained} (only testing and holdout cells)"
 )
 fig.suptitle(
-    "Healthy predicted probability across the plate (all hearts binary model)",
+    "Non-failing predicted probability across the plate (all hearts binary model)",
     x=0.04,
     y=0.99,
     ha="left",

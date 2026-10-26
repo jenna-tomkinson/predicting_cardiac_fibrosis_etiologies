@@ -242,7 +242,7 @@ per_heart_per_plate_output_dir.mkdir(parents=True, exist_ok=True)
 
 # Colorblind-friendly palette for the heart failure types
 failure_type_colors = {
-    "Healthy": "#009E73",
+    "Non-failing": "#009E73",
     "DCM": "#0072B2",
     "ICM": "#E69F00",
 }
@@ -263,9 +263,9 @@ plate_dfs = [pd.read_parquet(path) for path in fs_paths]
 # Feature selection is performed per plate, so only keep the columns shared across all plates
 well_df = pd.concat(plate_dfs, join="inner", ignore_index=True)
 
-# Healthy hearts have no heart failure type, so label them as Healthy
+# Healthy hearts have no heart failure type, so label them as Non-failing
 well_df["Metadata_heart_failure_type"] = well_df["Metadata_heart_failure_type"].fillna(
-    "Healthy"
+    "Non-failing"
 )
 
 pd.DataFrame(

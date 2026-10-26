@@ -118,8 +118,13 @@ if df_subset.empty:
 df_subset[actin_col] = pd.to_numeric(df_subset[actin_col], errors="coerce")
 df_subset = df_subset.dropna(subset=[actin_col])
 
+# Show healthy hearts as non-failing in the plot
+df_subset[metadata_col] = (
+    df_subset[metadata_col].str.title().replace({"Healthy": "Non-failing"})
+)
+
 # Plot with filled KDE + histogram
-palette = {"Healthy": "#2b8cbe", "Failing": "#f03b20"}
+palette = {"Non-failing": "#2b8cbe", "Failing": "#f03b20"}
 
 g = sns.displot(
     data=df_subset,
@@ -149,7 +154,7 @@ for ax in g.axes.flatten():
 
 # Labels and title
 g.set_axis_labels(f"Actin intensity ({actin_col})", "Density")
-g.fig.suptitle("Actin intensity distribution: Healthy vs Failing (by plate)", y=1.02)
+g.fig.suptitle("Actin intensity distribution: Non-failing vs Failing (by plate)", y=1.02)
 
 # Add dashed vertical mean lines per plate and cell type
 means = df_subset.groupby([plate_col, metadata_col])[actin_col].mean().unstack()
@@ -178,7 +183,7 @@ plt.show()
 
 # Optional summary: per-plate, per-cell-type stats
 summary = (
-    df_subset.groupby([plate_col, df_subset[metadata_col].str.title()])[actin_col]
+    df_subset.groupby([plate_col, metadata_col])[actin_col]
     .agg(["count", "mean", "median", "std"])
     .rename_axis([plate_col, metadata_col])
 )

@@ -20,10 +20,11 @@ python nbconverted/5.leave_one_heart_out.py
 python nbconverted/6.positional_effect_platemaps.py
 python nbconverted/7.multiclass_feature_importance.py
 python nbconverted/8.multiclass_single_cell_montage.py
+python nbconverted/9.export_multiclass_probabilities.py
 
 # Activate R environment
 conda deactivate
-conda activate R_fibrosis_env
+conda activate r_fibrosis_env
 
 # run R script for visualizing model performance
 Rscript nbconverted/3.vis_model_performance.r

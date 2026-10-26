@@ -175,7 +175,8 @@ rownames(mat_z) <- row_labels
 # Row annotation data.frame
 row_ann_df <- data.frame(
   Metadata_heart_number = as.character(aggregate_df$Metadata_heart_number),
-  Metadata_cell_type = as.character(aggregate_df$Metadata_cell_type),
+  # Show healthy hearts as non-failing in the plot
+  Metadata_cell_type = ifelse(aggregate_df$Metadata_cell_type == "Healthy", "Non-failing", as.character(aggregate_df$Metadata_cell_type)),
   Metadata_treatment = as.character(aggregate_df$Metadata_treatment),
   stringsAsFactors = FALSE
 )

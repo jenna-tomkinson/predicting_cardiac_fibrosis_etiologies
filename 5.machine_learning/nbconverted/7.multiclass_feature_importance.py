@@ -12,7 +12,7 @@
 # 
 # 1. **Measurement type x channel heatmap**: the max |coefficient| per compartment and measurement type (rows) and channel (columns) for each class.
 # 2. **Correlation channel pair heatmap**: the max |coefficient| across all correlation features (any compartment or correlation measurement) for each pair of channels.
-# 3. **Top features per class**: the features with the largest |coefficient| for each class, colored by direction.
+# 3. **Top features compared across classes**: the features with the largest |coefficient| for the Non-failing class, with the coefficients of the same features shown for every class (colored by direction).
 
 # ## Import libraries and helper functions
 
@@ -243,27 +243,44 @@ def wrap_feature_name(feature_name: str) -> str:
 def plot_top_features(
     coefs_df: pd.DataFrame,
     class_order: list,
+    base_class: str,
     n_top: int,
     pos_color: str,
     neg_color: str,
 ) -> plt.Figure:
     """
-    Plot the top features by |coefficient| for each class as signed bars colored by direction.
+    Plot the top features by |coefficient| for the base class as signed bars colored by direction,
+    with the same features (rows) shown for every class so the coefficients can be compared directly.
 
     Args:
         coefs_df (pd.DataFrame): Long coefficients (one row per feature and class).
         class_order (list): Order of the classes for the panels.
-        n_top (int): Number of features to show per class.
+        base_class (str): Class used to pick the top features (and their order).
+        n_top (int): Number of features to show.
         pos_color (str): Color for positive coefficients.
         neg_color (str): Color for negative coefficients.
 
     Returns:
         plt.Figure: Figure with one bar chart per class.
     """
-    fig, axes = plt.subplots(1, len(class_order), figsize=(8 * len(class_order), 0.85 * n_top + 2.5))
-    x_limit = coefs_df["Abs_Coefficient"].max() * 1.05
+    # Top features for the base class, ordered with the largest |coefficient| at the top
+    top_features = (
+        coefs_df[coefs_df["Class"] == base_class]
+        .nlargest(n_top, "Abs_Coefficient")["Feature"]
+        .tolist()[::-1]
+    )
+
+    fig, axes = plt.subplots(
+        1, len(class_order), figsize=(5 * len(class_order) + 6, 0.85 * n_top + 2.5), sharey=True
+    )
+    x_limit = coefs_df.loc[coefs_df["Feature"].isin(top_features), "Abs_Coefficient"].max() * 1.05
     for ax, class_name in zip(axes, class_order):
-        top_df = coefs_df[coefs_df["Class"] == class_name].nlargest(n_top, "Abs_Coefficient")[::-1]
+        top_df = (
+            coefs_df[coefs_df["Class"] == class_name]
+            .set_index("Feature")
+            .loc[top_features]
+            .reset_index()
+        )
         ax.barh(
             range(len(top_df)),
             top_df["Coefficient"],
@@ -294,7 +311,9 @@ def plot_top_features(
         frameon=False,
         fontsize=17,
     )
-    fig.suptitle(f"Top {n_top} features per class", fontsize=26, y=0.995)
+    fig.suptitle(
+        f"Top {n_top} features for {base_class}, compared across classes", fontsize=26, y=0.995
+    )
     fig.tight_layout(rect=(0, 0, 1, 0.935), w_pad=2)
     return fig
 
@@ -391,12 +410,18 @@ display(summary_df)
 # In[5]:
 
 
+# Show healthy hearts as non-failing in the plots
+plot_coefs_df = coefs_df.replace({"Class": {"Healthy": "Non-failing"}})
+plot_class_order = [
+    "Non-failing" if class_name == "Healthy" else class_name for class_name in class_order
+]
+
 # Shared max of the color scale for all heatmaps
 vmax = coefs_df["Abs_Coefficient"].max()
 
 fig = plot_feature_type_heatmaps(
-    coefs_df=coefs_df,
-    class_order=class_order,
+    coefs_df=plot_coefs_df,
+    class_order=plot_class_order,
     channels=channels,
     cmap=importance_cmap,
     vmax=vmax,
@@ -418,8 +443,8 @@ plt.show()
 
 
 fig = plot_correlation_heatmaps(
-    coefs_df=coefs_df,
-    class_order=class_order,
+    coefs_df=plot_coefs_df,
+    class_order=plot_class_order,
     channels=channels,
     cmap=importance_cmap,
     vmax=vmax,
@@ -453,14 +478,17 @@ top_corr_df = (
 display(top_corr_df)
 
 
-# ## Plot the top features per class
+# ## Plot the top features compared across classes
+# 
+# The top features are picked from the Non-failing class and the same features (rows, in the same order) are shown for every class, so the coefficients can be compared directly across classes.
 
 # In[8]:
 
 
 fig = plot_top_features(
-    coefs_df=coefs_df,
-    class_order=class_order,
+    coefs_df=plot_coefs_df,
+    class_order=plot_class_order,
+    base_class="Non-failing",
     n_top=15,
     pos_color=pos_color,
     neg_color=neg_color,
