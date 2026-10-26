@@ -25,6 +25,8 @@ from pycytominer import annotate, feature_select, normalize
 # Set if this run is for the HLHS dataset (will be updated by papermill)
 hlhs_run = False
 
+# Set to True to reprocess plates that already have output files (will be updated by papermill)
+overwrite = True
 
 # Optional CLI fallback for direct script-style execution.
 def _str_to_bool(value):
@@ -35,8 +37,12 @@ parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument(
     "--hlhs-run", dest="hlhs_run", type=_str_to_bool, default=hlhs_run
 )
+parser.add_argument(
+    "--overwrite", dest="overwrite", type=_str_to_bool, default=overwrite
+)
 args, _ = parser.parse_known_args(sys.argv[1:])
 hlhs_run = args.hlhs_run
+overwrite = args.overwrite
 
 
 # ## Set paths and variables
@@ -57,6 +63,7 @@ output_dir.mkdir(parents=True, exist_ok=True)
 feature_select_ops = [
     "drop_na_columns",
     "blocklist",
+    "drop_outliers", # add drop outliers to remove features with insanely large values
     "variance_threshold",
     "correlation_threshold",
 ] # run drop na columns first for improved speed
@@ -68,11 +75,12 @@ plate_names = [
 
 
 # Filter out plates that already exist in output_dir (any file starting with that plate name)
+# unless overwrite is set, in which case all plates are reprocessed
 to_process = []
 for plate in plate_names:
     pattern = f"{plate}*.parquet"
     processed = any(output_dir.glob(pattern))
-    if not processed:
+    if overwrite or not processed:
         to_process.append(plate)
 
 print("Plate names to process:")
@@ -81,7 +89,7 @@ pprint.pprint(to_process)
 
 # ## Set dictionary with plates to process
 
-# In[ ]:
+# In[4]:
 
 
 # Select the platemap based on the run type
@@ -202,6 +210,7 @@ for plate, info in plate_info_dictionary.items():
         output_normalized_file,
         operation=feature_select_ops,
         na_cutoff=0,
+        outlier_cutoff=100, # increase from default to drop more unexpected outliers
         blocklist_file="./blocklist_features.txt",
         output_file=output_feature_select_file,
         output_type="parquet",
@@ -212,7 +221,7 @@ for plate, info in plate_info_dictionary.items():
     cols_to_drop = [
         col
         for col in feature_selected_df.columns
-        if ("Costes" in col or "Location" in col or "Manders" in col or "RWC " in col)
+        if ("Costes" in col or "Location" in col or "Manders" in col or "RWC" in col)
         and not col.startswith("Metadata_")
     ]
     feature_selected_df.drop(columns=cols_to_drop, inplace=True)
@@ -237,6 +246,12 @@ for col in test_df.columns:
         raise ValueError(
             f"Feature selection failed to drop {col} from the feature selected data."
         )
+
+# Test that no cells are labelled as HLHS when this is not an HLHS run
+if not hlhs_run and (test_df["Metadata_heart_failure_type"] == "HLHS").any():
+    raise ValueError(
+        "Found cells labelled as HLHS in a non-HLHS run. Check that the correct platemap was used."
+    )
 
 # Print the number of features (do not have Metadata_* prefix)
 non_metadata_features = [

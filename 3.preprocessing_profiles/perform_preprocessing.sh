@@ -36,4 +36,7 @@ for converted_profile in "${converted_profiles[@]}"; do
 done
 
 python nbconverted/2.single_cell_processing.py
+
+# aggregate to well-level (bulk) profiles and process with pycytominer
+python nbconverted/3.bulk_processing.py
 )
